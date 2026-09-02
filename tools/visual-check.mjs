@@ -69,7 +69,8 @@ function connect(websocketURL) {
         socket.addEventListener('message', event => {
             const message = JSON.parse(event.data);
             if (message.method === 'Runtime.exceptionThrown') {
-                exceptions.push(message.params.exceptionDetails.text);
+                const details = message.params.exceptionDetails;
+                exceptions.push(details.exception?.description || `${details.text} at ${details.url || 'unknown'}:${details.lineNumber || 0}`);
             }
             if (!message.id || !pending.has(message.id)) return;
             const { resolveCommand, rejectCommand } = pending.get(message.id);
@@ -93,7 +94,7 @@ function connect(websocketURL) {
 
 async function capture(client, sessionId, scene, viewport) {
     const destination = join(output, `${scene}-${viewport.name}.png`);
-    const url = `http://127.0.0.1:${port}/?intro=off&motion=off&scene=${scene}`;
+    const url = `http://127.0.0.1:${port}/?intro=off&motion=off&capture=on&scene=${scene}`;
 
     await client.command('Emulation.setDeviceMetricsOverride', {
         width: viewport.width,
@@ -124,13 +125,20 @@ async function capture(client, sessionId, scene, viewport) {
     }, sessionId);
 
     const layout = await client.command('Runtime.evaluate', {
-        expression: `({ width: innerWidth, height: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth, ready: document.documentElement.dataset.ready })`,
+        expression: `({
+            width: innerWidth,
+            height: innerHeight,
+            overflow: document.documentElement.scrollWidth > innerWidth,
+            ready: document.documentElement.dataset.ready,
+            renderScale: window.fractalRenderer.getResolution().scale
+        })`,
         returnByValue: true
     }, sessionId);
     if (layout.result.value.width !== viewport.width || layout.result.value.height !== viewport.height) {
         throw new Error(`Viewport mismatch for ${scene}: ${JSON.stringify(layout.result.value)}`);
     }
     if (layout.result.value.overflow) throw new Error(`Horizontal overflow in ${scene} at ${viewport.name}`);
+    if (layout.result.value.renderScale < 1.99) throw new Error(`Supersampling disabled in ${scene}: ${layout.result.value.renderScale}x`);
 
     const screenshot = await client.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
     await writeFile(destination, Buffer.from(screenshot.data, 'base64'));
@@ -158,7 +166,7 @@ try {
 
     // Warm SwiftShader once before the measured captures; its first compiled frame can be blank.
     await client.command('Emulation.setDeviceMetricsOverride', { width: 800, height: 600, deviceScaleFactor: 1, mobile: false }, sessionId);
-    await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?intro=off&motion=off&scene=home` }, sessionId);
+    await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?intro=off&motion=off&capture=on&scene=home` }, sessionId);
     await client.command('Runtime.evaluate', {
         expression: `new Promise(resolve => {
             (function waitForRenderer() {
@@ -177,6 +185,34 @@ try {
     for (const viewport of viewports) {
         for (const scene of scenes) await capture(client, sessionId, scene, viewport);
     }
+
+    const depthRender = await client.command('Runtime.evaluate', {
+        expression: `(() => {
+            window.site.setCamera({ centerX: -0.7436438897030277, centerY: 0.13182589503471387, zoom: 1e12 });
+            const canvas = document.getElementById('fractalCanvas');
+            const gl = canvas.getContext('webgl');
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            let minimum = 255;
+            let maximum = 0;
+            const buckets = new Set();
+            for (let index = 0; index < pixels.length; index += 388) {
+                minimum = Math.min(minimum, pixels[index]);
+                maximum = Math.max(maximum, pixels[index]);
+                buckets.add(Math.floor(pixels[index] / 16));
+            }
+            return { minimum, maximum, tonalBuckets: buckets.size };
+        })()`,
+        returnByValue: true
+    }, sessionId);
+    const depthStats = depthRender.result.value;
+    if (depthStats.maximum - depthStats.minimum < 100 || depthStats.tonalBuckets < 6) {
+        throw new Error(`Depth probe lacks stable tonal detail: ${JSON.stringify(depthStats)}`);
+    }
+    const deepScreenshot = await client.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+    const deepDestination = join(output, 'depth-probe-1e12-mobile.png');
+    await writeFile(deepDestination, Buffer.from(deepScreenshot.data, 'base64'));
+    console.log(`captured depth probe at 1,000,000,000,000× (${depthStats.tonalBuckets} tonal buckets)`);
 
     const projectionCheck = await client.command('Runtime.evaluate', {
         expression: `(async () => {
@@ -208,6 +244,46 @@ try {
         throw new Error(`World-space projection failed: ${JSON.stringify(projectionCheck.result.value)}`);
     }
     console.log('verified DOM content moves with pan and scales with zoom');
+
+    const rendererCheck = await client.command('Runtime.evaluate', {
+        expression: `(async () => {
+            window.site.setCamera({ centerX: -0.7436438897030277, centerY: 0.13182589503471387, zoom: 1e12 });
+            const deep = window.fractalRenderer.getDiagnostics();
+
+            window.site.setCamera({
+                centerX: -1.29305,
+                centerY: 0.06655,
+                zoom: 34617.15
+            });
+            const canvas = document.getElementById('fractalCanvas');
+            canvas.dispatchEvent(new WheelEvent('wheel', {
+                deltaY: -1,
+                clientX: innerWidth / 2,
+                clientY: innerHeight / 2,
+                bubbles: true,
+                cancelable: true
+            }));
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const preview = window.fractalRenderer.getDiagnostics();
+            await new Promise(resolve => setTimeout(resolve, 220));
+            const refined = window.fractalRenderer.getDiagnostics();
+            return { deep, preview, refined };
+        })()`,
+        awaitPromise: true,
+        returnByValue: true
+    }, sessionId);
+    const modes = rendererCheck.result.value;
+    if (modes.deep.precision !== 'double-double') throw new Error(`Deep path inactive: ${JSON.stringify(modes.deep)}`);
+    if (modes.preview.mode !== 'interactive' || modes.preview.scale !== 1) {
+        throw new Error(`Interactive preview invalid: ${JSON.stringify(modes.preview)}`);
+    }
+    if (modes.refined.mode !== 'final' || modes.refined.scale < 1.99) {
+        throw new Error(`Idle refinement invalid: ${JSON.stringify(modes.refined)}`);
+    }
+    if (modes.preview.iterations !== modes.refined.iterations) {
+        throw new Error(`Iteration budget changed during refinement: ${JSON.stringify(modes)}`);
+    }
+    console.log('verified matching iteration budgets at 1× preview and 2× idle refinement near 34,617×, plus double-double precision at 1,000,000,000,000×');
     if (client.exceptions.length) throw new Error(`Browser exceptions:\n${client.exceptions.join('\n')}`);
     console.log(`Visual check complete: ${output}`);
 } finally {

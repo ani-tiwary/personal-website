@@ -1,6 +1,7 @@
 const canvas = document.getElementById('fractalCanvas');
 // Preserve the last frame so deterministic browser captures see the same pixels as users.
-const glOptions = { preserveDrawingBuffer: true };
+const captureMode = new URLSearchParams(window.location.search).get('capture') === 'on';
+const glOptions = { preserveDrawingBuffer: captureMode };
 const gl = canvas.getContext('webgl', glOptions) || canvas.getContext('experimental-webgl', glOptions);
 
 if (!gl) {
@@ -9,11 +10,58 @@ if (!gl) {
 
 let width = window.innerWidth;
 let height = window.innerHeight;
-canvas.width = width;
-canvas.height = height;
+let renderScale = 1;
+let renderMode = 'final';
+let pendingInteractiveFrame = 0;
+let refinementTimer = 0;
 canvas.style = "position: absolute; top: 0px; left: 0px; right: 0px; bottom: 0px; margin: auto;";
 
-gl.viewport(0, 0, width, height);
+function resizeDrawingBuffer() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+
+    const quality = new URLSearchParams(window.location.search).get('quality');
+    const deviceScale = Math.max(1, window.devicePixelRatio || 1);
+    const finalScale = quality === 'native' ? deviceScale : Math.max(2, deviceScale);
+    const desiredScale = renderMode === 'interactive' ? 1 : finalScale;
+    const maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS) || [width * finalScale, height * finalScale];
+    renderScale = Math.min(desiredScale, maxViewport[0] / width, maxViewport[1] / height);
+
+    canvas.width = Math.max(1, Math.round(width * renderScale));
+    canvas.height = Math.max(1, Math.round(height * renderScale));
+    gl.viewport(0, 0, canvas.width, canvas.height);
+}
+
+resizeDrawingBuffer();
+
+function setRenderMode(mode) {
+    if (renderMode === mode) return;
+    renderMode = mode;
+    resizeDrawingBuffer();
+}
+
+function refineRender() {
+    clearTimeout(refinementTimer);
+    refinementTimer = 0;
+    setRenderMode('final');
+    render();
+}
+
+function scheduleRefinement(delay = 140) {
+    clearTimeout(refinementTimer);
+    refinementTimer = setTimeout(refineRender, delay);
+}
+
+function requestInteractiveRender() {
+    setRenderMode('interactive');
+    if (!pendingInteractiveFrame) {
+        pendingInteractiveFrame = requestAnimationFrame(() => {
+            pendingInteractiveFrame = 0;
+            render();
+        });
+    }
+    scheduleRefinement();
+}
 
 // Vertex shader - simple full-screen quad
 const vertexShaderSource = `
@@ -24,7 +72,7 @@ const vertexShaderSource = `
 `;
 
 // Fragment shader - Mandelbrot set with adaptive precision
-const fragmentShaderSource = `
+const legacyFragmentShaderSource = `
     precision highp float;
     uniform vec2 u_resolution;
     uniform float u_zoom;
@@ -202,6 +250,8 @@ const fragmentShaderSource = `
     }
 `;
 
+const fragmentShaderSource = window.fractalFragmentShaderSource || legacyFragmentShaderSource;
+
 function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -252,10 +302,10 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 const positionLocation = gl.getAttribLocation(program, 'a_position');
 const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
 const zoomLocation = gl.getUniformLocation(program, 'u_zoom');
-const centerLocation = gl.getUniformLocation(program, 'u_center');
-const centerHighLocation = gl.getUniformLocation(program, 'u_centerHigh');
+const centerHiLocation = gl.getUniformLocation(program, 'u_centerHi');
+const centerLoLocation = gl.getUniformLocation(program, 'u_centerLo');
 const maxIterationsLocation = gl.getUniformLocation(program, 'u_maxIterations');
-const useHighPrecisionLocation = gl.getUniformLocation(program, 'u_useHighPrecision');
+const useDoubleDoubleLocation = gl.getUniformLocation(program, 'u_useDoubleDouble');
 
 // View state
 let zoom = 1.35;
@@ -279,7 +329,7 @@ let lastY = 0;
 // Iteration animation state
 let isAnimatingIterations = true;
 let iterationAnimationStartTime = performance.now();
-let iterationAnimationDuration = 3000; // 3 seconds
+let iterationAnimationDuration = 3800; // 3.8 seconds
 
 // Easing function for smooth animation (ease-in-out)
 function easeInOutCubic(t) {
@@ -312,6 +362,8 @@ let movementOriginalTarget = null; // Store original target when reset is needed
  * @param {number} [duration] - Animation duration in milliseconds (default: 2000)
  */
 function smoothMoveTo(sceneNameOrX, targetCenterY, targetZoom, duration = 2000) {
+    clearTimeout(refinementTimer);
+    setRenderMode('interactive');
     let targetCenterX, finalTargetCenterY, finalTargetZoom, finalDuration;
     
     // Check if first argument is a string (scene name)
@@ -532,7 +584,7 @@ function animateMovement() {
     zoom = movementTargetZoom;
     centerX = movementTargetCenterX;
     centerY = movementTargetCenterY;
-    render();
+    refineRender();
     
     // Double-check zoom is set correctly (for very large values)
     if (Math.abs(zoom - movementTargetZoom) > 0.01) {
@@ -542,14 +594,11 @@ function animateMovement() {
     window.dispatchEvent(new CustomEvent('fractal:camera-settled', { detail: getCameraState() }));
 }
 
-// Split a number into high and low parts for double-double precision
-// This maintains precision at very high zoom levels
-function splitDouble(value) {
-    const splitter = 134217729.0; // 2^27 + 1, used for splitting
-    const temp = splitter * value;
-    const high = temp - (temp - value);
-    const low = value - high;
-    return { high: high, low: low };
+let lastRenderDiagnostics = {};
+
+function splitForGPU(value) {
+    const high = Math.fround(value);
+    return { high, low: value - high };
 }
 
 function render() {
@@ -560,47 +609,38 @@ function render() {
     gl.enableVertexAttribArray(positionLocation);
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
     
-    // Calculate high precision center offset
-    // Split center into high (single precision) and low (error) parts
-    // This maintains precision at very high zoom levels
-    const centerXSplit = splitDouble(centerX);
-    const centerYSplit = splitDouble(centerY);
-    const centerXHigh = centerXSplit.high;
-    const centerYHigh = centerYSplit.high;
-    const centerXLow = centerXSplit.low;   // Error term for double-double precision
-    const centerYLow = centerYSplit.low;    // Error term for double-double precision
-    
-    // Use high precision only when zoom is very high (above 1000)
-    // This keeps performance good at normal zoom levels
-    const useHighPrecision = zoom > 1000.0 ? 1.0 : 0.0;
-    
-    // Adaptive iteration count based on zoom for better performance and quality
-    // More iterations needed at higher zoom to see detail
-    // Scale more aggressively at very high zoom levels
-    let adaptiveIterations;
-    if (zoom > 1000000) {
-        // At 10^6+ zoom, need many iterations
-        adaptiveIterations = Math.min(maxIterations, Math.max(500, Math.floor(Math.log(zoom + 1) * 200)));
-    } else if (zoom > 10000) {
-        // At 10^4+ zoom, moderate iterations
-        adaptiveIterations = Math.min(maxIterations, Math.max(300, Math.floor(Math.log(zoom + 1) * 180)));
-    } else {
-        // Lower zoom, fewer iterations
-        adaptiveIterations = Math.min(maxIterations, Math.max(100, Math.floor(Math.log(zoom + 1) * 150)));
-    }
+    const detailIterations = Math.min(
+        maxIterations,
+        Math.max(120, Math.floor(120 + Math.log2(Math.max(1, zoom)) * 45))
+    );
+    // A reduced iteration budget changes the boundary by temporarily treating
+    // slow-escaping points as interior. Keep the maths identical while moving;
+    // the lower-resolution framebuffer is the interactive performance lever.
+    const adaptiveIterations = detailIterations;
+    const useDoubleDouble = zoom > 100000;
+    const centerXParts = splitForGPU(centerX);
+    const centerYParts = splitForGPU(centerY);
     
     // Set uniforms
-    gl.uniform2f(resolutionLocation, width, height);
+    gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
     gl.uniform1f(zoomLocation, zoom);
-    gl.uniform2f(centerLocation, centerXHigh, centerYHigh);
-    gl.uniform2f(centerHighLocation, centerXLow, centerYLow);
+    gl.uniform2f(centerHiLocation, centerXParts.high, centerYParts.high);
+    gl.uniform2f(centerLoLocation, centerXParts.low, centerYParts.low);
     gl.uniform1i(maxIterationsLocation, adaptiveIterations);
-    gl.uniform1f(useHighPrecisionLocation, useHighPrecision);
+    gl.uniform1f(useDoubleDoubleLocation, useDoubleDouble ? 1 : 0);
     
     // Clear and draw
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    lastRenderDiagnostics = {
+        mode: renderMode,
+        scale: renderScale,
+        iterations: adaptiveIterations,
+        precision: useDoubleDouble ? 'double-double' : 'direct',
+        pixels: canvas.width * canvas.height
+    };
     
     window.dispatchEvent(new CustomEvent('fractal:render', { detail: getCameraState() }));
 }
@@ -611,6 +651,8 @@ function getCameraState() {
 
 function setCameraImmediate(camera) {
     isAnimatingMovement = false;
+    clearTimeout(refinementTimer);
+    setRenderMode('final');
     centerX = camera.centerX;
     centerY = camera.centerY;
     zoom = camera.zoom;
@@ -671,14 +713,15 @@ canvas.addEventListener('wheel', (event) => {
     const complexX = (mouseX / width - 0.5) * aspect * 3.0 / zoom + centerX;
     const complexY = (0.5 - mouseY / height) * 3.0 / zoom + centerY; // Flip Y: screen Y increases downward, complex Y increases upward
     
-    const zoomFactor = event.deltaY < 0 ? 1.05 : 1 / 1.05; // Slower zoom (5% per step instead of 10%)
-    zoom *= zoomFactor;
+    const boundedDelta = Math.max(-120, Math.min(120, event.deltaY));
+    const zoomFactor = Math.exp(-boundedDelta * 0.0018);
+    zoom = Math.max(0.0001, Math.min(1e14, zoom * zoomFactor));
     
     // Adjust center so the point under the cursor stays fixed
     centerX = complexX - (mouseX / width - 0.5) * aspect * 3.0 / zoom;
     centerY = complexY - (0.5 - mouseY / height) * 3.0 / zoom; // Flip Y to match
     
-    render();
+    requestInteractiveRender();
 });
 
 // Panning with mouse drag
@@ -690,6 +733,8 @@ canvas.addEventListener('mousedown', (event) => {
         }
         
         isDragging = true;
+        clearTimeout(refinementTimer);
+        setRenderMode('interactive');
         lastX = event.clientX;
         lastY = event.clientY;
     }
@@ -712,24 +757,22 @@ canvas.addEventListener('mousemove', (event) => {
         centerY += dy / height * 3.0 / zoom; // Note: + instead of - for correct direction
         lastX = event.clientX;
         lastY = event.clientY;
-        render();
+        requestInteractiveRender();
     }
 });
 
 canvas.addEventListener('mouseup', () => {
     isDragging = false;
+    refineRender();
 });
 
 canvas.addEventListener('mouseleave', () => {
+    if (isDragging) refineRender();
     isDragging = false;
 });
 
 window.addEventListener('resize', () => {
-    width = window.innerWidth;
-    height = window.innerHeight;
-    canvas.width = width;
-    canvas.height = height;
-    gl.viewport(0, 0, width, height);
+    resizeDrawingBuffer();
     render();
 });
 
@@ -757,7 +800,7 @@ function animateIterations() {
     } else {
         isAnimatingIterations = false;
         maxIterations = iteration; // Ensure we end exactly at target
-        render();
+        refineRender();
         
         // Don't start fade-in here - it's already started 0.5s after click
     }
@@ -787,6 +830,7 @@ function setupBlackOverlay() {
         isAnimatingIterations = true;
         iterationAnimationStartTime = performance.now();
         maxIterations = 1;
+        setRenderMode('interactive');
         
         // Initial render with 1 iteration
         render();
@@ -812,6 +856,18 @@ if (document.readyState === 'loading') {
 
 window.fractalRenderer = {
     getState: getCameraState,
+    getDiagnostics() {
+        return { ...lastRenderDiagnostics };
+    },
+    getResolution() {
+        return {
+            cssWidth: width,
+            cssHeight: height,
+            pixelWidth: canvas.width,
+            pixelHeight: canvas.height,
+            scale: renderScale
+        };
+    },
     setCamera: setCameraImmediate,
     moveTo(camera, duration = 2000) {
         smoothMoveTo(camera.centerX, camera.centerY, camera.zoom, duration);

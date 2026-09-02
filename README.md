@@ -31,6 +31,20 @@ Useful development URLs:
 /#about
 /?scene=work&intro=off&motion=off
 /?scene=about&intro=off&motion=off&debug=on
+/?scene=about&intro=off&quality=native
+```
+
+The fractal renders at a 2× internal drawing resolution by default and is downsampled to the viewport for smoother edges. Add `quality=native` while developing on a slower machine to render at the display's native pixel ratio instead.
+
+During panning, wheel zoom, and camera animation, rendering automatically drops to a 1× preview while retaining the same iteration budget as the settled frame. After 140 ms without input, a sharper 2× frame replaces it. This keeps the fractal boundary and grayscale stable during movement—the only temporary quality change is spatial resolution. At zooms above 100,000×, the renderer switches to error-compensated double-double arithmetic so coordinate detail is retained instead of being approximated by unstable perturbation textures.
+
+The grayscale palette is based on absolute continuous escape time rather than the current iteration budget. Consequently, pixels that resolve in both the interactive and final pass keep the same shade instead of flickering when refinement begins. The visual suite includes a detailed one-trillion-times depth probe and checks its tonal range.
+
+Renderer state is available for profiling in the browser console:
+
+```js
+window.fractalRenderer.getDiagnostics()
+// { mode: "final", scale: 2, iterations: 687, precision: "direct", pixels: ... }
 ```
 
 Press `D` to toggle author mode. Pan and zoom to a composition you like, then use **Copy scene JSON** to copy a ready-to-edit scene definition. Arrow keys move between scenes; number keys jump directly to them.

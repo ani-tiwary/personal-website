@@ -2,7 +2,7 @@
   "name": "ani-fractal-portfolio",
   "private": true,
   "scripts": {
-    "check": "node --check script.js && node --check scene-data.js && node --check site-controller.js",
+    "check": "node --check script.js && node --check fractal-shader.js && node --check scene-data.js && node --check site-controller.js",
     "visual-check": "node tools/visual-check.mjs"
   }
 }

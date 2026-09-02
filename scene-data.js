@@ -14,7 +14,12 @@ window.siteScenes = [
                 desktop: { x: 0.28, y: 0.5 },
                 mobile: { x: 0.5, y: 0.67 }
             },
-            links: [{ label: "About me", scene: "about" }]
+            links: [{ label: "About me", scene: "about" }],
+            socialLinks: [
+                { label: "Instagram", icon: "instagram", href: "https://www.instagram.com/ani_tiwary/" },
+                { label: "LinkedIn", icon: "linkedin", href: "https://www.linkedin.com/in/ani-tiwary/" },
+                { label: "GitHub", icon: "github", href: "https://github.com/ani-tiwary" }
+            ]
         }
     },
     {

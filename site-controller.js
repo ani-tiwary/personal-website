@@ -14,14 +14,61 @@
     const progress = document.getElementById('sceneProgress');
     const number = document.getElementById('sceneNumber');
     const total = document.getElementById('sceneTotal');
+    const themeToggle = document.getElementById('themeToggle');
+    const socialIconPaths = {
+        instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.4" cy="6.6" r="1" class="social-icon-dot"/>',
+        linkedin: '<path class="social-icon-fill" d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.13 1.44-2.13 2.94v5.67H9.35V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z"/>',
+        github: '<path class="social-icon-fill" d="M12 .5A12 12 0 0 0 8.2 23.88c.6.11.82-.26.82-.58v-2.24c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.21.09 1.85 1.24 1.85 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.66-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23A11.5 11.5 0 0 1 12 6.28c1.02 0 2.04.14 3 .4 2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.8 5.62-5.48 5.92.43.37.82 1.1.82 2.22v3.3c0 .32.22.7.83.58A12 12 0 0 0 12 .5z"/>'
+    };
     let activeScene = null;
     let authorMode = params.get('debug') === 'on';
+    let easterEggTimer = 0;
+    let easterEggStartTheme = null;
+    let typedSequence = '';
     let resolveReady;
 
     const ready = new Promise(resolve => { resolveReady = resolve; });
 
     function findScene(id) {
         return scenes.find(scene => scene.id === id);
+    }
+
+    function setTheme(theme, persist = true) {
+        const nextTheme = theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = nextTheme;
+        const isDark = nextTheme === 'dark';
+        themeToggle.setAttribute('aria-pressed', String(isDark));
+        themeToggle.setAttribute('aria-label', `Switch to ${isDark ? 'light' : 'dark'} mode`);
+        themeToggle.title = `${isDark ? 'Light' : 'Dark'} mode`;
+        if (persist) {
+            try { localStorage.setItem('theme', nextTheme); } catch (_) { /* Storage may be disabled. */ }
+        }
+    }
+
+    function stopThemeEasterEgg(restoreTheme = true) {
+        if (!easterEggTimer) return;
+        clearInterval(easterEggTimer);
+        easterEggTimer = 0;
+        if (restoreTheme && easterEggStartTheme) setTheme(easterEggStartTheme, false);
+        easterEggStartTheme = null;
+        document.body.classList.remove('is-theme-looping');
+    }
+
+    function toggleThemeEasterEgg() {
+        if (easterEggTimer) {
+            stopThemeEasterEgg();
+            return;
+        }
+        if (reduceMotion) return;
+
+        easterEggStartTheme = document.documentElement.dataset.theme;
+        document.body.classList.add('is-theme-looping');
+        const flipTheme = () => {
+            setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', false);
+        };
+        flipTheme();
+        // Keep the inversion playful without entering rapid-strobe territory.
+        easterEggTimer = window.setInterval(flipTheme, 50);
     }
 
     function requestedScene() {
@@ -76,6 +123,27 @@
                 links.append(anchor);
             });
             panel.append(links);
+        }
+
+        if (scene.content.socialLinks?.length) {
+            const socialLinks = makeElement('div', 'scene-socials');
+            socialLinks.setAttribute('aria-label', 'Social profiles');
+            scene.content.socialLinks.forEach(link => {
+                const socialLink = makeElement('a', 'social-link');
+                socialLink.href = link.href;
+                socialLink.target = '_blank';
+                socialLink.rel = 'noopener noreferrer';
+                socialLink.setAttribute('aria-label', link.label);
+                socialLink.title = link.label;
+
+                const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                icon.setAttribute('viewBox', '0 0 24 24');
+                icon.setAttribute('aria-hidden', 'true');
+                icon.innerHTML = socialIconPaths[link.icon] || '';
+                socialLink.append(icon);
+                socialLinks.append(socialLink);
+            });
+            panel.append(socialLinks);
         }
 
         anchor.append(panel);
@@ -228,11 +296,31 @@
     window.addEventListener('fractal:render', updateCameraUI);
     window.addEventListener('resize', () => positionContent());
     document.getElementById('copyPositionBtn').addEventListener('click', copySceneJSON);
+    themeToggle.addEventListener('click', () => {
+        stopThemeEasterEgg();
+        setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
     window.addEventListener('keydown', event => {
+        if (event.key === 'Escape') stopThemeEasterEgg();
+
+        const target = event.target;
+        const isTypingField = target instanceof HTMLElement
+            && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+        if (!isTypingField && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
+            typedSequence = `${typedSequence}${event.key.toLowerCase()}`.slice(-7);
+            if (typedSequence === 'seizure') {
+                typedSequence = '';
+                toggleThemeEasterEgg();
+            }
+        }
+
         if (event.key.toLowerCase() === 'd') setAuthorMode(!authorMode);
         if (event.key === 'ArrowRight') gotoScene(adjacentScene(1));
         if (event.key === 'ArrowLeft') gotoScene(adjacentScene(-1));
         if (/^[1-9]$/.test(event.key) && scenes[Number(event.key) - 1]) gotoScene(scenes[Number(event.key) - 1]);
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stopThemeEasterEgg();
     });
 
     window.site = {
@@ -245,6 +333,7 @@
     };
 
     renderNavigation();
+    setTheme(document.documentElement.dataset.theme, false);
     setAuthorMode(authorMode);
     document.body.classList.toggle('is-motionless', reduceMotion);
     if (params.get('intro') === 'off') document.getElementById('blackOverlay').style.display = 'none';
