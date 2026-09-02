@@ -3,119 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Fractal Explorer</title>
-    <style>
-        @font-face {
-            font-family: 'Manrope';
-            src: url('Manrope/static/Manrope-ExtraLight.ttf') format('truetype');
-            font-weight: normal;
-            font-style: normal;
-        }
-        body {
-            margin: 0;
-            overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            background-color: #000000;
-        }
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        #textCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-            z-index: 10;
-        }
-        #blackOverlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: #000000;
-            z-index: 9999;
-            cursor: pointer;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        #blackOverlay img {
-            width: 32px;
-            height: auto;
-            filter: invert(1);
-        }
-        #copyPositionBtn {
-            position: fixed;
-            top: 60px;
-            left: 10px;
-            padding: 6px 12px;
-            background-color: rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(0, 0, 0, 0.3);
-            border-radius: 4px;
-            font-family: 'Manrope', sans-serif;
-            font-size: 12px;
-            cursor: pointer;
-            z-index: 100;
-            color: #000000;
-            transition: background-color 0.2s;
-        }
-        #copyPositionBtn:hover {
-            background-color: rgba(255, 255, 255, 0.95);
-        }
-        #copyPositionBtn:active {
-            background-color: rgba(200, 200, 200, 0.8);
-        }
-        #navBar {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 100;
-            display: flex;
-            gap: 8px;
-            padding: 8px 16px;
-            background-color: rgba(255, 255, 255, 0.85);
-            border-radius: 20px;
-            font-family: 'Manrope', sans-serif;
-            font-size: 12px;
-            backdrop-filter: blur(10px);
-        }
-        .navButton {
-            padding: 6px 14px;
-            background-color: transparent;
-            border: none;
-            border-radius: 12px;
-            font-family: 'Manrope', sans-serif;
-            font-size: 12px;
-            color: #000000;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .navButton:hover {
-            background-color: rgba(0, 0, 0, 0.1);
-        }
-        .navButton:active {
-            background-color: rgba(0, 0, 0, 0.15);
-        }
-    </style>
+    <meta name="description" content="Ani's software engineering, machine learning, and data science portfolio.">
+    <title>Ani — software, ML, and data</title>
+    <link rel="stylesheet" href="site.css">
 </head>
 <body>
-    <div id="blackOverlay">
-        <img src="cursor.png" alt="Cursor">
+    <a class="skip-link" href="#sceneContent">Skip to content</a>
+    <div id="blackOverlay" aria-label="Enter Ani's portfolio" role="button" tabindex="0">
+        <span class="enter-mark" aria-hidden="true">↘</span>
+        <span>click to explore</span>
     </div>
-    <canvas id="fractalCanvas"></canvas>
-    <canvas id="textCanvas"></canvas>
-    <nav id="navBar"></nav>
-    <button id="copyPositionBtn" style="display: none;">Copy Position JSON</button>
-    <script src="text-labels.js"></script>
-    <script src="text-components.js"></script>
-    <script src="scene-coordinates.js"></script>
+    <canvas id="fractalCanvas" aria-hidden="true"></canvas>
+    <div class="texture" aria-hidden="true"></div>
+    <header class="site-header">
+        <a class="wordmark" href="#home" data-scene-link="home" aria-label="Ani, home">ani<span>.</span></a>
+        <nav id="navBar" aria-label="Primary navigation"></nav>
+        <p class="scene-count" aria-hidden="true"><span id="sceneNumber">01</span> / <span id="sceneTotal">03</span></p>
+    </header>
+    <main id="sceneContent" class="scene-content" tabindex="-1" aria-live="polite"></main>
+    <footer class="site-footer">
+        <p>scroll to explore</p>
+        <div class="progress-track" aria-hidden="true"><span id="sceneProgress"></span></div>
+        <p id="cameraReadout" class="camera-readout"></p>
+    </footer>
+    <aside id="authorPanel" class="author-panel" aria-label="Author tools" hidden>
+        <div><strong>Author mode</strong><kbd>D</kbd></div>
+        <pre id="authorCoordinates"></pre>
+        <button id="copyPositionBtn" type="button">Copy scene JSON</button>
+    </aside>
+    <div id="authorCrosshair" class="author-crosshair" hidden aria-hidden="true"></div>
+    <noscript>This portfolio uses JavaScript to render and navigate an interactive fractal.</noscript>
+    <script src="scene-data.js"></script>
     <script src="script.js"></script>
+    <script src="site-controller.js"></script>
 </body>
 </html>

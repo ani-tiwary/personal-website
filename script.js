@@ -1,20 +1,16 @@
 const canvas = document.getElementById('fractalCanvas');
-const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+// Preserve the last frame so deterministic browser captures see the same pixels as users.
+const glOptions = { preserveDrawingBuffer: true };
+const gl = canvas.getContext('webgl', glOptions) || canvas.getContext('experimental-webgl', glOptions);
 
 if (!gl) {
     alert('WebGL not supported. Please use a modern browser.');
 }
 
-// Text canvas setup
-const textCanvas = document.getElementById('textCanvas');
-const textCtx = textCanvas.getContext('2d');
-
 let width = window.innerWidth;
 let height = window.innerHeight;
 canvas.width = width;
 canvas.height = height;
-textCanvas.width = width;
-textCanvas.height = height;
 canvas.style = "position: absolute; top: 0px; left: 0px; right: 0px; bottom: 0px; margin: auto;";
 
 gl.viewport(0, 0, width, height);
@@ -267,22 +263,9 @@ let centerX = -1.5;
 let centerY = 0.0;
 let maxIterations = 1;
 
-// Text labels are now loaded from text-labels.js
-// If textLabels is not defined, initialize with empty array
-if (typeof textLabels === 'undefined') {
-    var textLabels = [];
-}
-
 // Debug info - cursor tracking
 let cursorFractalX = 0;
 let cursorFractalY = 0;
-let showDebugInfo = true; // Temporary debug feature
-
-// Text fade-in animation state
-let isFadingInText = false;
-let textFadeStartTime = 0;
-let textFadeDuration = 750; 
-let currentFadingLabelIndex = 0; // Track which label is currently fading in
 
 // Debug mode
 let debugMode = false;
@@ -359,7 +342,7 @@ function smoothMoveTo(sceneNameOrX, targetCenterY, targetZoom, duration = 2000) 
         finalDuration = duration;
     }
     
-    // If current zoom is > 2, first go back to pos0's zoom level (for both zooming in and out)
+    // If current zoom is > 2, first return to the home scale.
     if (zoom > 2.0) {
         movementNeedsReset = true;
         // Store original target for after reset
@@ -369,8 +352,7 @@ function smoothMoveTo(sceneNameOrX, targetCenterY, targetZoom, duration = 2000) 
             zoom: finalTargetZoom,
             duration: finalDuration
         };
-        // Find pos0 to get its zoom level
-        const pos0Scene = sceneCoordinates && sceneCoordinates.find(s => s.name === 'pos0');
+        const pos0Scene = sceneCoordinates && sceneCoordinates.find(s => s.name === 'home');
         if (pos0Scene) {
             // Zoom to pos0's zoom level at current position (don't change x,y)
             movementStartZoom = zoom;
@@ -557,6 +539,7 @@ function animateMovement() {
         zoom = movementTargetZoom;
         render();
     }
+    window.dispatchEvent(new CustomEvent('fractal:camera-settled', { detail: getCameraState() }));
 }
 
 // Split a number into high and low parts for double-double precision
@@ -567,121 +550,6 @@ function splitDouble(value) {
     const high = temp - (temp - value);
     const low = value - high;
     return { high: high, low: low };
-}
-
-// Convert fractal coordinates to screen coordinates
-function fractalToScreen(fractalX, fractalY) {
-    const aspect = width / height;
-    const screenX = ((fractalX - centerX) * zoom / (3.0 * aspect) + 0.5) * width;
-    const screenY = ((fractalY - centerY) * zoom / 3.0 + 0.5) * height;
-    // Flip Y coordinate (screen Y increases downward, fractal Y increases upward)
-    return { x: screenX, y: height - screenY };
-}
-
-// Calculate font size in fractal units from zoom amount
-// This allows text to be specified by zoom level instead of fontSize
-function fontSizeFromZoom(targetZoom) {
-    // Base size that works well at zoom level 1.35
-    // Formula: fontSize scales inversely with zoom
-    return 0.15 * (1.35 / targetZoom);
-}
-
-// Render text labels
-function renderText() {
-    // Clear text canvas
-    textCtx.clearRect(0, 0, width, height);
-    
-    // Set font
-    textCtx.font = 'Manrope';
-    textCtx.textAlign = 'center';
-    textCtx.textBaseline = 'middle';
-    
-    // Render each label
-    textLabels.forEach(label => {
-        // Convert fractal coordinates to screen coordinates
-        const screenPos = fractalToScreen(label.x, label.y);
-        
-        // Calculate font size - use zoom-based calculation if zoom is specified, otherwise use fontSize
-        let fontSizeInFractalUnits;
-        if (label.zoom !== undefined) {
-            fontSizeInFractalUnits = fontSizeFromZoom(label.zoom);
-        } else {
-            fontSizeInFractalUnits = label.fontSize;
-        }
-        
-        // Calculate font size in pixels based on zoom
-        // The font size scales with zoom so it appears the same size relative to the fractal
-        const fontSizePixels = fontSizeInFractalUnits * zoom * Math.min(width, height) / 3.0;
-        
-        // Only render if the text would be visible (not too small or off-screen)
-        if (fontSizePixels > 1 && 
-            screenPos.x > -100 && screenPos.x < width + 100 &&
-            screenPos.y > -100 && screenPos.y < height + 100) {
-            textCtx.font = `${fontSizePixels}px Manrope`;
-            
-            // Set text alignment (default to 'center' if not specified)
-            textCtx.textAlign = label.align || 'center';
-            
-            // Convert hex color to rgba with opacity
-            const opacity = label.opacity !== undefined ? label.opacity : 1.0;
-            const hex = label.color.replace('#', '');
-            const r = parseInt(hex.substr(0, 2), 16);
-            const g = parseInt(hex.substr(2, 2), 16);
-            const b = parseInt(hex.substr(4, 2), 16);
-            textCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
-            
-            textCtx.fillText(label.text, screenPos.x, screenPos.y);
-            
-            // Reset to center for next label (unless it specifies otherwise)
-            textCtx.textAlign = 'center';
-        }
-    });
-    
-    // Render debug info in top left
-    if (showDebugInfo) {
-        textCtx.font = '14px Manrope';
-        textCtx.textAlign = 'left';
-        textCtx.textBaseline = 'top';
-        
-        const debugText = [
-            `Cursor: (${cursorFractalX.toFixed(6)}, ${cursorFractalY.toFixed(6)})`,
-            `Center: (${centerX.toFixed(6)}, ${centerY.toFixed(6)})`,
-            `Zoom: ${zoom.toFixed(2)}`
-        ];
-        
-        // Calculate text dimensions for background
-        const padding = 8;
-        const lineHeight = 20;
-        const textWidth = Math.max(
-            ...debugText.map(line => {
-                const metrics = textCtx.measureText(line);
-                return metrics.width;
-            })
-        );
-        const textHeight = debugText.length * lineHeight;
-        
-        // Draw background with slight transparency
-        textCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        textCtx.fillRect(10 - padding, 10 - padding, textWidth + padding * 2, textHeight + padding * 2);
-        
-        // Draw text
-        textCtx.fillStyle = '#000000';
-        debugText.forEach((line, index) => {
-            textCtx.fillText(line, 10, 10 + index * lineHeight);
-        });
-        
-        // Show copy position button
-        const copyBtn = document.getElementById('copyPositionBtn');
-        if (copyBtn) {
-            copyBtn.style.display = 'block';
-        }
-    } else {
-        // Hide copy position button when debug info is hidden
-        const copyBtn = document.getElementById('copyPositionBtn');
-        if (copyBtn) {
-            copyBtn.style.display = 'none';
-        }
-    }
 }
 
 function render() {
@@ -734,8 +602,21 @@ function render() {
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     
-    // Render text overlay
-    renderText();
+    window.dispatchEvent(new CustomEvent('fractal:render', { detail: getCameraState() }));
+}
+
+function getCameraState() {
+    return { centerX, centerY, zoom, cursorX: cursorFractalX, cursorY: cursorFractalY };
+}
+
+function setCameraImmediate(camera) {
+    isAnimatingMovement = false;
+    centerX = camera.centerX;
+    centerY = camera.centerY;
+    zoom = camera.zoom;
+    maxIterations = 1500;
+    render();
+    window.dispatchEvent(new CustomEvent('fractal:camera-settled', { detail: getCameraState() }));
 }
 
 // Map screen coordinates to complex plane
@@ -822,6 +703,7 @@ canvas.addEventListener('mousemove', (event) => {
     const aspect = width / height;
     cursorFractalX = (mouseX / width - 0.5) * aspect * 3.0 / zoom + centerX;
     cursorFractalY = (0.5 - mouseY / height) * 3.0 / zoom + centerY; // Flip Y: screen Y increases downward, complex Y increases upward
+    window.dispatchEvent(new CustomEvent('fractal:render', { detail: getCameraState() }));
     
     if (isDragging) {
         const dx = event.clientX - lastX;
@@ -831,9 +713,6 @@ canvas.addEventListener('mousemove', (event) => {
         lastX = event.clientX;
         lastY = event.clientY;
         render();
-    } else if (showDebugInfo) {
-        // Only update text overlay for debug display (more efficient than full render)
-        renderText();
     }
 });
 
@@ -845,112 +724,14 @@ canvas.addEventListener('mouseleave', () => {
     isDragging = false;
 });
 
-// Keyboard controls
-window.addEventListener('keydown', (event) => {
-    // Toggle debug mode with 'D' key
-    if (event.key === 'd' || event.key === 'D') {
-        toggleDebugMode();
-    }
-    
-    // Save location with 'S' key (debug mode only)
-    if ((event.key === 's' || event.key === 'S') && debugMode) {
-        saveLocation();
-    }
-    
-    // Copy cursor position with 'C' key (formatted for text-labels.js)
-    if (event.key === 'c' || event.key === 'C') {
-        // Format as text-labels.js entry with all fields
-        const labelJson = `    {
-        text: 'Label Text',
-        x: ${cursorFractalX},
-        y: ${cursorFractalY},
-        zoom: ${zoom},
-        color: '#000000',
-        opacity: 1.0
-    }`;
-        
-        // Copy to clipboard
-        navigator.clipboard.writeText(labelJson).then(() => {
-            // Visual feedback
-            console.log('Copied cursor position to clipboard!');
-            console.log('Paste this into text-labels.js:');
-            console.log(labelJson);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
-            // Fallback: show in alert
-            alert('Cursor Position (copy this):\n\n' + labelJson);
-        });
-    }
-    
-    // Number keys 0-9 to navigate to pos0, pos1, pos2, etc.
-    if (event.key >= '0' && event.key <= '9') {
-        const posNumber = parseInt(event.key);
-        const sceneName = `pos${posNumber}`;
-        
-        // Check if scene exists
-        if (typeof sceneCoordinates !== 'undefined' && sceneCoordinates) {
-            const scene = sceneCoordinates.find(s => s.name === sceneName);
-            if (scene) {
-                smoothMoveTo(sceneName);
-            } else {
-                console.log(`Scene "${sceneName}" not found. Available scenes:`, 
-                    sceneCoordinates.map(s => s.name));
-            }
-        }
-    }
-});
-
 window.addEventListener('resize', () => {
     width = window.innerWidth;
     height = window.innerHeight;
     canvas.width = width;
     canvas.height = height;
-    textCanvas.width = width;
-    textCanvas.height = height;
     gl.viewport(0, 0, width, height);
     render();
 });
-
-// Animate text fade-in (sequential - one label after another)
-function animateTextFadeIn() {
-    if (!isFadingInText) return;
-    
-    const currentTime = performance.now();
-    const elapsed = currentTime - textFadeStartTime;
-    const progress = Math.min(elapsed / textFadeDuration, 1.0);
-    
-    // Smooth ease-in curve for fade
-    const eased = progress * progress; // Simple ease-in
-    
-    // Update opacity for current label
-    if (currentFadingLabelIndex < textLabels.length) {
-        textLabels[currentFadingLabelIndex].opacity = eased;
-    }
-    
-    render();
-    
-    if (progress < 1.0) {
-        requestAnimationFrame(animateTextFadeIn);
-    } else {
-        // Current label fade complete - ensure opacity is exactly 1.0
-        if (currentFadingLabelIndex < textLabels.length) {
-            textLabels[currentFadingLabelIndex].opacity = 1.0;
-        }
-        
-        // Move to next label if there is one
-        currentFadingLabelIndex++;
-        if (currentFadingLabelIndex < textLabels.length && textLabels[currentFadingLabelIndex].opacity === 0) {
-            // Start fading in the next label
-            textFadeStartTime = performance.now();
-            requestAnimationFrame(animateTextFadeIn);
-        } else {
-            // All labels faded in
-            isFadingInText = false;
-            currentFadingLabelIndex = 0; // Reset for next time
-        }
-        render();
-    }
-}
 
 // Animate iterations from 1 to 500 on page load (reduced for performance)
 function animateIterations() {
@@ -1000,8 +781,7 @@ function setupBlackOverlay() {
         e.preventDefault();
         e.stopPropagation();
         
-        // Remove the overlay
-        blackOverlay.style.display = 'none';
+        blackOverlay.classList.add('is-dismissed');
         
         // Reset animation state and start
         isAnimatingIterations = true;
@@ -1014,19 +794,12 @@ function setupBlackOverlay() {
         // Start iteration animation
         animateIterations();
         
-        // Start text fade-in animation 0.5 seconds after click
-        setTimeout(() => {
-            if (!isFadingInText) {
-                isFadingInText = true;
-                currentFadingLabelIndex = 0; // Start with first label
-                textFadeStartTime = performance.now();
-                animateTextFadeIn();
-            }
-        }, 500);
     };
     
     blackOverlay.addEventListener('click', handleClick);
-    blackOverlay.addEventListener('mousedown', handleClick);
+    blackOverlay.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') handleClick(event);
+    });
 }
 
 // Set up overlay when DOM is ready
@@ -1037,66 +810,14 @@ if (document.readyState === 'loading') {
     setupBlackOverlay();
 }
 
-// Copy position button functionality
-const copyPositionBtn = document.getElementById('copyPositionBtn');
-if (copyPositionBtn) {
-    copyPositionBtn.addEventListener('click', () => {
-        // Format as JavaScript object syntax (no quotes on keys) with leading comma
-        const jsObjectString = `,
-    {
-        name: "Current Position",
-        centerX: ${centerX},
-        centerY: ${centerY},
-        zoom: ${zoom}
-    }`;
-        
-        // Copy to clipboard
-        navigator.clipboard.writeText(jsObjectString).then(() => {
-            // Visual feedback
-            const originalText = copyPositionBtn.textContent;
-            copyPositionBtn.textContent = 'Copied!';
-            copyPositionBtn.style.backgroundColor = 'rgba(144, 238, 144, 0.8)';
-            
-            setTimeout(() => {
-                copyPositionBtn.textContent = originalText;
-                copyPositionBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
-            }, 1000);
-        }).catch(err => {
-            console.error('Failed to copy:', err);
-            // Fallback: show in alert
-            alert('Position:\n\n' + jsObjectString);
-        });
-    });
-}
-
-// Initialize navigation bar
-function initNavBar() {
-    const navBar = document.getElementById('navBar');
-    if (!navBar) return;
-    
-    // Clear existing buttons
-    navBar.innerHTML = '';
-    
-    // Add buttons for each scene
-    if (typeof sceneCoordinates !== 'undefined' && sceneCoordinates) {
-        sceneCoordinates.forEach(scene => {
-            const button = document.createElement('button');
-            button.className = 'navButton';
-            button.textContent = scene.name;
-            button.addEventListener('click', () => {
-                smoothMoveTo(scene.name);
-            });
-            navBar.appendChild(button);
-        });
-    }
-}
-
-// Initialize navigation bar when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initNavBar);
-} else {
-    initNavBar();
-}
+window.fractalRenderer = {
+    getState: getCameraState,
+    setCamera: setCameraImmediate,
+    moveTo(camera, duration = 2000) {
+        smoothMoveTo(camera.centerX, camera.centerY, camera.zoom, duration);
+    },
+    render
+};
 
 // Don't start animation automatically - wait for click
 // Initial render with black screen (maxIterations = 1 will show mostly black anyway, but overlay covers it)
