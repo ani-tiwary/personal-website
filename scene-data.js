@@ -4,10 +4,12 @@ window.siteScenes = [
     {
         id: "home",
         label: "Home",
+        persistent: true,
         camera: { centerX: -1.5, centerY: 0, zoom: 1.35 },
         content: {
             eyebrow: "Portfolio / 2026",
             title: "hello. i'm ani.",
+            titleAccent: "ani",
             body: "I make thoughtful software and explore the edges of machine learning and data.",
             align: "left",
             placement: {
@@ -25,6 +27,7 @@ window.siteScenes = [
     {
         id: "about",
         label: "About",
+        persistent: true,
         camera: { centerX: -0.6619150588774977, centerY: 0.4626763853121446, zoom: 6252.914748397133 },
         content: {
             eyebrow: "A little context",
@@ -42,6 +45,7 @@ window.siteScenes = [
     {
         id: "work",
         label: "Work",
+        persistent: true,
         camera: { centerX: -0.7510280100616008, centerY: 0.04104642517631003, zoom: 888.1995418015389 },
         content: {
             eyebrow: "Selected work",
@@ -53,6 +57,24 @@ window.siteScenes = [
                 desktop: { x: 0.68, y: 0.5 },
                 mobile: { x: 0.5, y: 0.64 }
             },
+            fractalLinks: [
+                {
+                    label: "Pinwheel",
+                    camera: { centerX: -0.7510280100616008, centerY: 0.04104642517631003, zoom: 888.1995418015389 }
+                },
+                {
+                    label: "Seahorse valley",
+                    camera: { centerX: -0.743643887037151, centerY: 0.13182590420533, zoom: 1450 }
+                },
+                {
+                    label: "Needle garden",
+                    camera: { centerX: -1.250660, centerY: 0.020120, zoom: 1050 }
+                },
+                {
+                    label: "Miniature set",
+                    camera: { centerX: -1.748, centerY: 0.0004, zoom: 720 }
+                }
+            ],
             links: [{ label: "Start over", scene: "home" }]
         }
     }

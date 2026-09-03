@@ -186,6 +186,35 @@ try {
         for (const scene of scenes) await capture(client, sessionId, scene, viewport);
     }
 
+    const zoomOutRender = await client.command('Runtime.evaluate', {
+        expression: `(() => {
+            window.site.setCamera({ centerX: -0.5, centerY: 0, zoom: 0.1 });
+            const canvas = document.getElementById('fractalCanvas');
+            const gl = canvas.getContext('webgl');
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            const samples = [
+                [0.02, 0.02], [0.5, 0.02], [0.98, 0.02],
+                [0.02, 0.5], [0.98, 0.5],
+                [0.02, 0.98], [0.5, 0.98], [0.98, 0.98]
+            ].map(([x, y]) => {
+                const pixelX = Math.min(canvas.width - 1, Math.floor(canvas.width * x));
+                const pixelY = Math.min(canvas.height - 1, Math.floor(canvas.height * y));
+                return pixels[(pixelY * canvas.width + pixelX) * 4];
+            });
+            return { minimum: Math.min(...samples), maximum: Math.max(...samples), samples };
+        })()`,
+        returnByValue: true
+    }, sessionId);
+    const zoomOutStats = zoomOutRender.result.value;
+    if (zoomOutStats.minimum < 200 || zoomOutStats.maximum - zoomOutStats.minimum > 2) {
+        throw new Error(`Zoomed-out far field is not uniform: ${JSON.stringify(zoomOutStats)}`);
+    }
+    const zoomOutScreenshot = await client.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
+    const zoomOutDestination = join(output, 'zoom-out-probe-mobile.png');
+    await writeFile(zoomOutDestination, Buffer.from(zoomOutScreenshot.data, 'base64'));
+    console.log(`verified uniform far field at 0.1× (${zoomOutStats.minimum}–${zoomOutStats.maximum})`);
+
     const depthRender = await client.command('Runtime.evaluate', {
         expression: `(() => {
             window.site.setCamera({ centerX: -0.7436438897030277, centerY: 0.13182589503471387, zoom: 1e12 });

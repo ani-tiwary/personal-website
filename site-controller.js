@@ -83,6 +83,21 @@
         return element;
     }
 
+    function makeSceneTitle(title, accent) {
+        const heading = makeElement('h1', 'scene-title');
+        const accentStart = accent ? title.toLowerCase().indexOf(accent.toLowerCase()) : -1;
+        if (accentStart < 0) {
+            heading.textContent = title;
+            return heading;
+        }
+
+        heading.append(document.createTextNode(title.slice(0, accentStart)));
+        const name = makeElement('span', 'title-name', title.slice(accentStart, accentStart + accent.length));
+        name.setAttribute('aria-label', accent);
+        heading.append(name, document.createTextNode(title.slice(accentStart + accent.length)));
+        return heading;
+    }
+
     function renderNavigation() {
         navRoot.replaceChildren();
         scenes.forEach(scene => {
@@ -95,16 +110,33 @@
         total.textContent = String(scenes.length).padStart(2, '0');
     }
 
-    function renderContent(scene) {
+    function renderSceneContent(scene) {
         const anchor = makeElement('div', 'scene-anchor');
+        anchor.dataset.sceneAnchor = scene.id;
         const panel = makeElement('article', 'scene-panel');
         panel.dataset.align = scene.content.align || 'left';
         panel.dataset.surface = String(Boolean(scene.content.surface));
         panel.dataset.scene = scene.id;
 
         panel.append(makeElement('p', 'scene-eyebrow', scene.content.eyebrow));
-        panel.append(makeElement('h1', 'scene-title', scene.content.title));
+        panel.append(makeSceneTitle(scene.content.title, scene.content.titleAccent));
         if (scene.content.body) panel.append(makeElement('p', 'scene-copy', scene.content.body));
+
+        if (scene.content.fractalLinks?.length) {
+            const fractalLinks = makeElement('div', 'fractal-links');
+            fractalLinks.setAttribute('aria-label', 'Explore fractal details');
+            scene.content.fractalLinks.forEach((link, index) => {
+                const button = makeElement('button', 'fractal-link', String(index + 1).padStart(2, '0'));
+                button.type = 'button';
+                button.dataset.fractalLink = String(index);
+                button.dataset.fractalCamera = JSON.stringify(link.camera);
+                button.setAttribute('aria-label', `View ${link.label}`);
+                button.setAttribute('aria-pressed', String(index === 0));
+                button.title = link.label;
+                fractalLinks.append(button);
+            });
+            panel.append(fractalLinks);
+        }
 
         if (scene.content.links?.length) {
             const links = makeElement('div', 'scene-links');
@@ -147,8 +179,28 @@
         }
 
         anchor.append(panel);
-        contentRoot.replaceChildren(anchor);
+        contentRoot.append(anchor);
         requestAnimationFrame(() => panel.classList.add('is-visible'));
+    }
+
+    // Core scenes are all kept in the fractal world at once. This lets their
+    // panels appear naturally as the camera travels or zooms between them,
+    // instead of replacing Home with the newly selected scene.
+    function renderPersistentContent() {
+        contentRoot.replaceChildren();
+        scenes.filter(scene => scene.persistent).forEach(renderSceneContent);
+    }
+
+    function ensureActiveSceneContent(scene) {
+        const selector = `[data-scene-anchor="${scene.id}"]`;
+        if (contentRoot.querySelector(selector)) return;
+
+        // Future, non-persistent scenes only need to exist while selected.
+        contentRoot.querySelectorAll('.scene-anchor').forEach(anchor => {
+            const anchoredScene = findScene(anchor.dataset.sceneAnchor);
+            if (!anchoredScene?.persistent) anchor.remove();
+        });
+        renderSceneContent(scene);
     }
 
     function updateSceneUI(scene) {
@@ -156,7 +208,7 @@
         activeScene = scene;
         document.body.dataset.scene = scene.id;
         document.title = `${scene.label} — Ani`;
-        renderContent(scene);
+        ensureActiveSceneContent(scene);
         positionContent(renderer.getState());
         number.textContent = String(index + 1).padStart(2, '0');
         progress.style.width = `${((index + 1) / scenes.length) * 100}%`;
@@ -170,37 +222,38 @@
     // project that coordinate through the current camera. The DOM therefore behaves
     // like geometry in the WebGL world while remaining semantic and accessible.
     function positionContent(camera = renderer.getState()) {
-        if (!activeScene) return;
-        const anchor = contentRoot.querySelector('.scene-anchor');
-        const panel = contentRoot.querySelector('.scene-panel');
-        if (!anchor || !panel) return;
-
-        const placementOptions = activeScene.content.placement || {};
-        const placement = window.innerWidth <= 620
-            ? (placementOptions.mobile || placementOptions.desktop)
-            : (placementOptions.desktop || placementOptions.mobile);
-        const target = placement || { x: 0.5, y: 0.5 };
         const aspect = window.innerWidth / window.innerHeight;
-        const reference = activeScene.camera;
+        contentRoot.querySelectorAll('.scene-anchor').forEach(anchor => {
+            const scene = findScene(anchor.dataset.sceneAnchor);
+            const panel = anchor.querySelector('.scene-panel');
+            if (!scene || !panel) return;
 
-        const worldX = reference.centerX + (target.x - 0.5) * aspect * 3 / reference.zoom;
-        const worldY = reference.centerY + (0.5 - target.y) * 3 / reference.zoom;
-        const screenX = ((worldX - camera.centerX) * camera.zoom / (3 * aspect) + 0.5) * window.innerWidth;
-        const screenY = (0.5 - (worldY - camera.centerY) * camera.zoom / 3) * window.innerHeight;
-        const scale = camera.zoom / reference.zoom;
+            const placementOptions = scene.content.placement || {};
+            const placement = window.innerWidth <= 620
+                ? (placementOptions.mobile || placementOptions.desktop)
+                : (placementOptions.desktop || placementOptions.mobile);
+            const target = placement || { x: 0.5, y: 0.5 };
+            const reference = scene.camera;
 
-        anchor.style.left = `${screenX}px`;
-        anchor.style.top = `${screenY}px`;
+            const worldX = reference.centerX + (target.x - 0.5) * aspect * 3 / reference.zoom;
+            const worldY = reference.centerY + (0.5 - target.y) * 3 / reference.zoom;
+            const screenX = ((worldX - camera.centerX) * camera.zoom / (3 * aspect) + 0.5) * window.innerWidth;
+            const screenY = (0.5 - (worldY - camera.centerY) * camera.zoom / 3) * window.innerHeight;
+            const scale = camera.zoom / reference.zoom;
 
-        // CSS transforms often scale a cached bitmap of the whole element. CSS zoom
-        // participates in layout, so the browser rasterizes glyphs at their displayed
-        // size and keeps the typography sharp as the fractal camera gets closer.
-        const rasterScale = Math.min(32, Math.max(0.02, scale));
-        panel.style.zoom = String(rasterScale);
-        panel.style.visibility = scale >= 0.02 && scale <= 32 ? 'visible' : 'hidden';
-        const linksAreUsable = scale > 0.2 && scale < 5;
-        panel.querySelectorAll('a').forEach(link => {
-            link.style.pointerEvents = linksAreUsable ? 'auto' : 'none';
+            anchor.style.left = `${screenX}px`;
+            anchor.style.top = `${screenY}px`;
+
+            // CSS transforms often scale a cached bitmap of the whole element. CSS zoom
+            // participates in layout, so the browser rasterizes glyphs at their displayed
+            // size and keeps the typography sharp as the fractal camera gets closer.
+            const rasterScale = Math.min(32, Math.max(0.02, scale));
+            panel.style.zoom = String(rasterScale);
+            panel.style.visibility = scale >= 0.02 && scale <= 32 ? 'visible' : 'hidden';
+            const linksAreUsable = scale > 0.2 && scale < 5;
+            panel.querySelectorAll('a, button[data-fractal-link]').forEach(link => {
+                link.style.pointerEvents = linksAreUsable ? 'auto' : 'none';
+            });
         });
     }
 
@@ -292,6 +345,18 @@
         gotoScene(link.dataset.sceneLink);
     });
 
+    document.addEventListener('click', event => {
+        const link = event.target.closest('[data-fractal-link]');
+        if (!link) return;
+        const camera = JSON.parse(link.dataset.fractalCamera);
+        const links = link.closest('.fractal-links');
+        links.querySelectorAll('[data-fractal-link]').forEach(button => {
+            button.setAttribute('aria-pressed', String(button === link));
+        });
+        if (reduceMotion) renderer.setCamera(camera);
+        else renderer.moveTo(camera, 1300);
+    });
+
     window.addEventListener('popstate', () => gotoScene(requestedScene(), { updateURL: false }));
     window.addEventListener('fractal:render', updateCameraUI);
     window.addEventListener('resize', () => positionContent());
@@ -333,6 +398,7 @@
     };
 
     renderNavigation();
+    renderPersistentContent();
     setTheme(document.documentElement.dataset.theme, false);
     setAuthorMode(authorMode);
     document.body.classList.toggle('is-motionless', reduceMotion);

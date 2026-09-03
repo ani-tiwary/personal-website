@@ -80,7 +80,6 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1.25rem;
     color: #fff;
     background: #000;
     cursor: pointer;
@@ -88,8 +87,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 }
 
 #blackOverlay.is-dismissed { opacity: 0; visibility: hidden; pointer-events: none; }
-#blackOverlay .enter-mark { font-size: 2rem; animation: float 1.8s ease-in-out infinite; }
-#blackOverlay > span:not(.enter-mark) { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; opacity: .7; }
+#blackOverlay .enter-prompt { font-size: .62rem; letter-spacing: .14em; text-transform: uppercase; opacity: .68; }
+#blackOverlay .enter-prompt span { margin-inline: .45rem; opacity: .55; }
 
 .site-header, .site-footer, .scene-content { position: fixed; z-index: 5; }
 
@@ -190,7 +189,8 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .scene-content {
     inset: 0;
     pointer-events: none;
-    overflow: visible;
+    /* Persistent scene panels can sit far beyond the current camera view. */
+    overflow: hidden;
 }
 
 .scene-anchor {
@@ -250,6 +250,19 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
     text-wrap: balance;
 }
 
+.title-name {
+    display: inline-block;
+    margin-left: .065em;
+    color: var(--ink);
+    font-size: 1.07em;
+    font-weight: 750;
+    letter-spacing: -.095em;
+    -webkit-text-fill-color: currentColor;
+    -webkit-text-stroke: 0;
+    text-shadow: 0 0 .12em var(--paper), 0 0 .32em var(--paper);
+    transform: translateY(-.025em);
+}
+
 [data-align="center"] .scene-title { margin-inline: auto; }
 
 .scene-copy {
@@ -284,6 +297,39 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .scene-link:hover { background: rgba(255,255,255,.78); transform: translateY(-2px); }
 .scene-link::after { content: "\2197"; }
 .scene-link[data-scene-link]::after { content: "\2192"; }
+
+.fractal-links {
+    position: absolute;
+    top: 50%;
+    left: clamp(-5.1rem, -5vw, -3.35rem);
+    display: grid;
+    gap: .72rem;
+    transform: translateY(-50%);
+}
+
+.fractal-link {
+    display: grid;
+    width: 2.45rem;
+    height: 2.45rem;
+    padding: 0;
+    place-items: center;
+    border: 1px solid rgba(255,255,255,.64);
+    border-radius: 50%;
+    color: inherit;
+    background: rgba(250,250,247,.72);
+    box-shadow: 0 .35rem 1rem rgba(0,0,0,.12);
+    cursor: pointer;
+    font-size: .58rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .08em;
+    pointer-events: auto;
+    backdrop-filter: blur(12px);
+    transition: background .2s, color .2s, transform .25s var(--ease), box-shadow .25s var(--ease);
+}
+
+.fractal-link:hover,
+.fractal-link:focus-visible { transform: scale(1.12); }
+.fractal-link[aria-pressed="true"] { color: #fff; background: var(--ink); box-shadow: 0 .55rem 1.3rem rgba(0,0,0,.2); }
 
 .scene-socials {
     display: flex;
@@ -390,7 +436,9 @@ kbd { padding: .18rem .38rem; border: 1px solid #aaa; border-radius: .25rem; bac
     [data-align="center"] .scene-eyebrow, [data-align="center"] .scene-links, [data-align="center"] .scene-socials { justify-content: flex-start; }
     [data-align="center"] .scene-title, [data-align="center"] .scene-copy { margin-left: 0; }
     .scene-title { font-size: clamp(3.35rem, 18vw, 5.4rem); }
+    .title-name { font-size: 1.04em; }
     .scene-panel[data-surface="true"] { padding: 1.35rem; border-radius: 1.5rem; }
+    .fractal-links { top: auto; bottom: calc(100% + .9rem); left: 0; grid-auto-flow: column; transform: none; }
     .site-footer { grid-template-columns: auto 1fr; }
     .camera-readout { display: none; }
 }

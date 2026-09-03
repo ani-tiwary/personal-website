@@ -29,7 +29,10 @@ window.fractalFragmentShaderSource = `
 
     float continuousIteration(int iteration, float magnitudeSquared) {
         float logMagnitude = 0.5 * log(max(magnitudeSquared, 4.000001));
-        return float(iteration) + 1.0 - log(max(logMagnitude, 0.000001)) / log(2.0);
+        // Very distant points can produce a negative smooth-iteration value.
+        // Negative values are reserved for the interior sentinel, so clamp escaped
+        // points to the uniform far-field tone instead of drawing a false circle.
+        return max(0.0, float(iteration) + 1.0 - log(max(logMagnitude, 0.000001)) / log(2.0));
     }
 
     float mandelbrotDirect(vec2 c) {
