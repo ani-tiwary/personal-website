@@ -303,8 +303,8 @@
             const target = placement || { x: 0.5, y: 0.5 };
             const reference = scene.camera;
 
-            const worldX = reference.centerX + (target.x - 0.5) * aspect * 3 / reference.zoom;
-            const worldY = reference.centerY + (0.5 - target.y) * 3 / reference.zoom;
+            const worldX = Number(reference.centerX) + (target.x - 0.5) * aspect * 3 / reference.zoom;
+            const worldY = Number(reference.centerY) + (0.5 - target.y) * 3 / reference.zoom;
             const screenX = ((worldX - camera.centerX) * camera.zoom / (3 * aspect) + 0.5) * window.innerWidth;
             const screenY = (0.5 - (worldY - camera.centerY) * camera.zoom / 3) * window.innerHeight;
             const scale = camera.zoom / reference.zoom;
@@ -380,8 +380,8 @@
         cameraReadout.textContent = `${state.centerX.toFixed(5)} / ${state.centerY.toFixed(5)} / ${state.zoom.toFixed(2)}×`;
         if (authorMode) {
             coordinates.textContent = JSON.stringify({
-                centerX: state.centerX,
-                centerY: state.centerY,
+                centerX: state.preciseCenterX,
+                centerY: state.preciseCenterY,
                 zoom: state.zoom,
                 cursorX: state.cursorX,
                 cursorY: state.cursorY
@@ -403,7 +403,7 @@
         const snippet = JSON.stringify({
             id: 'new-scene',
             label: 'New scene',
-            camera: { centerX: camera.centerX, centerY: camera.centerY, zoom: camera.zoom },
+            camera: { centerX: camera.preciseCenterX, centerY: camera.preciseCenterY, zoom: camera.zoom },
             content: { eyebrow: 'Section', title: 'New scene.', body: 'Add copy here.', align: 'left' }
         }, null, 4);
         navigator.clipboard.writeText(snippet).then(() => {

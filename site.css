@@ -44,6 +44,7 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
     height: 100%;
     z-index: 0;
     cursor: grab;
+    touch-action: none;
     image-rendering: auto;
 }
 

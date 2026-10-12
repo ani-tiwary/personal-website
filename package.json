@@ -6,8 +6,10 @@
   },
   "scripts": {
     "build": "node tools/build-site.mjs",
-    "check": "node --check script.js && node --check fractal-shader.js && node --check scene-data.js && node --check site-controller.js && node --check tools/sync-resume.mjs",
+    "check": "node --check script.js && node --check fractal-shader.js && node --check fractal-math.js && node --check fractal-worker.js && node --check scene-data.js && node --check site-controller.js && node --check tools/sync-resume.mjs",
     "sync-resume": "node tools/sync-resume.mjs",
+    "test:fractal": "node --test tools/fractal-math.test.mjs",
+    "test:fractal-browser": "node tools/fractal-check.mjs",
     "test:resume": "node --test tools/sync-resume.test.mjs",
     "visual-check": "node tools/visual-check.mjs"
   }

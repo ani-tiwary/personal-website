@@ -37,7 +37,9 @@ async function launchChrome() {
         '--headless=new',
         '--no-sandbox',
         '--hide-scrollbars',
-        '--use-gl=swiftshader',
+        '--use-gl=angle',
+        '--use-angle=swiftshader',
+        '--disable-gpu-watchdog',
         '--enable-unsafe-swiftshader',
         '--remote-debugging-port=0',
         `--user-data-dir=/tmp/ani-visual-check-${process.pid}`,
@@ -134,7 +136,8 @@ async function capture(client, sessionId, scene, viewport) {
             ready: document.documentElement.dataset.ready,
             renderScale: window.fractalRenderer.getResolution().scale
         })`,
-        returnByValue: true
+        returnByValue: true,
+        awaitPromise: true
     }, sessionId);
     if (layout.result.value.width !== viewport.width || layout.result.value.height !== viewport.height) {
         throw new Error(`Viewport mismatch for ${scene}: ${JSON.stringify(layout.result.value)}`);
@@ -206,7 +209,8 @@ try {
             });
             return { minimum: Math.min(...samples), maximum: Math.max(...samples), samples };
         })()`,
-        returnByValue: true
+        returnByValue: true,
+        awaitPromise: true
     }, sessionId);
     const zoomOutStats = zoomOutRender.result.value;
     if (zoomOutStats.minimum < 200 || zoomOutStats.maximum - zoomOutStats.minimum > 2) {
@@ -218,8 +222,9 @@ try {
     console.log(`verified uniform far field at 0.1× (${zoomOutStats.minimum}–${zoomOutStats.maximum})`);
 
     const depthRender = await client.command('Runtime.evaluate', {
-        expression: `(() => {
+        expression: `(async () => {
             window.site.setCamera({ centerX: -0.7436438897030277, centerY: 0.13182589503471387, zoom: 1e12 });
+            await window.fractalRenderer.whenReady();
             const canvas = document.getElementById('fractalCanvas');
             const gl = canvas.getContext('webgl');
             const pixels = new Uint8Array(canvas.width * canvas.height * 4);
@@ -234,7 +239,8 @@ try {
             }
             return { minimum, maximum, tonalBuckets: buckets.size };
         })()`,
-        returnByValue: true
+        returnByValue: true,
+        awaitPromise: true
     }, sessionId);
     const depthStats = depthRender.result.value;
     if (depthStats.maximum - depthStats.minimum < 100 || depthStats.tonalBuckets < 6) {
@@ -246,13 +252,15 @@ try {
     console.log(`captured depth probe at 1,000,000,000,000× (${depthStats.tonalBuckets} tonal buckets)`);
 
     const perturbationCheck = await client.command('Runtime.evaluate', {
-        expression: `(() => {
+        expression: `(async () => {
             // A bounded reference orbit exercises the perturbation path itself;
-            // escaping views continue to use direct double-double arithmetic.
+            // escaping references are also supported by rebasing.
             window.site.setCamera({ centerX: -0.5, centerY: 0, zoom: 1e20 });
+            await window.fractalRenderer.whenReady();
             return window.fractalRenderer.getDiagnostics();
         })()`,
-        returnByValue: true
+        returnByValue: true,
+        awaitPromise: true
     }, sessionId);
     if (perturbationCheck.result.value.precision !== 'reference-orbit perturbation') {
         throw new Error(`Deep renderer did not activate: ${JSON.stringify(perturbationCheck.result.value)}`);
@@ -293,6 +301,7 @@ try {
     const rendererCheck = await client.command('Runtime.evaluate', {
         expression: `(async () => {
             window.site.setCamera({ centerX: -0.7436438897030277, centerY: 0.13182589503471387, zoom: 1e12 });
+            await window.fractalRenderer.whenReady();
             const deep = window.fractalRenderer.getDiagnostics();
 
             window.site.setCamera({
@@ -310,7 +319,15 @@ try {
             }));
             await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             const preview = window.fractalRenderer.getDiagnostics();
-            await new Promise(resolve => setTimeout(resolve, 220));
+            await new Promise((resolve, reject) => {
+                const started = performance.now();
+                function wait() {
+                    if (window.fractalRenderer.getDiagnostics().mode === 'final') return resolve();
+                    if (performance.now() - started > 5000) return reject(Error('Idle refinement timed out'));
+                    requestAnimationFrame(wait);
+                }
+                wait();
+            });
             const refined = window.fractalRenderer.getDiagnostics();
             return { deep, preview, refined };
         })()`,
@@ -318,7 +335,7 @@ try {
         returnByValue: true
     }, sessionId);
     const modes = rendererCheck.result.value;
-    if (modes.deep.precision !== 'double-double') throw new Error(`Deep path inactive: ${JSON.stringify(modes.deep)}`);
+    if (modes.deep.precision !== 'reference-orbit perturbation') throw new Error(`Deep path inactive: ${JSON.stringify(modes.deep)}`);
     if (modes.preview.mode !== 'interactive' || modes.preview.scale !== 1) {
         throw new Error(`Interactive preview invalid: ${JSON.stringify(modes.preview)}`);
     }
@@ -328,7 +345,7 @@ try {
     if (modes.preview.iterations !== modes.refined.iterations) {
         throw new Error(`Iteration budget changed during refinement: ${JSON.stringify(modes)}`);
     }
-    console.log('verified matching iteration budgets at 1× preview and 2× idle refinement near 34,617×, plus double-double precision at 1,000,000,000,000×');
+    console.log('verified matching iteration budgets at 1× preview and 2× idle refinement near 34,617×, plus reference-orbit precision at 1,000,000,000,000×');
     if (client.exceptions.length) throw new Error(`Browser exceptions:\n${client.exceptions.join('\n')}`);
     console.log(`Visual check complete: ${output}`);
 } finally {

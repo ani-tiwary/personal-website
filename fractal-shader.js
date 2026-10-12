@@ -1,19 +1,27 @@
-// Stable escape-time renderer. Deep zooms use a pair of floats for every scalar,
-// retaining roughly twice the precision of the native WebGL float path.
+// Escape-time renderer with float-pair perturbation and bounded series skipping.
+// Screen-space contour relief keeps shading outside the expensive iteration loop.
 window.fractalFragmentShaderSource = `
+    #ifdef GL_OES_standard_derivatives
+    #extension GL_OES_standard_derivatives : enable
+    #endif
     precision highp float;
 
     uniform vec2 u_resolution;
-    uniform float u_zoom;
     uniform vec2 u_centerHi;
     uniform vec2 u_centerLo;
+    uniform vec4 u_referenceDelta;
+    uniform vec2 u_pixelScale;
+    uniform vec4 u_series[4];
+    uniform int u_seriesIteration;
+    uniform vec2 u_seriesInverse;
+    uniform float u_renderScale;
     uniform int u_maxIterations;
     uniform float u_useDoubleDouble;
     uniform float u_usePerturbation;
     uniform sampler2D u_referenceOrbit;
     uniform float u_referenceOrbitLength;
 
-    const int LOOP_LIMIT = 2000;
+    const int LOOP_LIMIT = 4096;
     const float DD_SPLITTER = 4097.0;
 
     bool isKnownInterior(vec2 c) {
@@ -92,9 +100,9 @@ window.fractalFragmentShaderSource = `
         return value.x + value.y;
     }
 
-    float mandelbrotDoubleDouble(vec2 pixelDelta) {
-        vec2 cReal = ddAdd(vec2(u_centerHi.x, u_centerLo.x), vec2(pixelDelta.x, 0.0));
-        vec2 cImaginary = ddAdd(vec2(u_centerHi.y, u_centerLo.y), vec2(pixelDelta.y, 0.0));
+    float mandelbrotDoubleDouble(vec4 pixelDelta) {
+        vec2 cReal = ddAdd(vec2(u_centerHi.x, u_centerLo.x), pixelDelta.xy);
+        vec2 cImaginary = ddAdd(vec2(u_centerHi.y, u_centerLo.y), pixelDelta.zw);
         vec2 zReal = vec2(0.0);
         vec2 zImaginary = vec2(0.0);
 
@@ -126,68 +134,86 @@ window.fractalFragmentShaderSource = `
         return texture2D(u_referenceOrbit, vec2(x, 0.5));
     }
 
-    float mandelbrotPerturbation(vec2 pixelDelta) {
-        vec2 deltaReal = vec2(0.0);
-        vec2 deltaImaginary = vec2(0.0);
-        vec2 dcReal = vec2(pixelDelta.x, 0.0);
-        vec2 dcImaginary = vec2(pixelDelta.y, 0.0);
-
-        for (int i = 0; i < LOOP_LIMIT; i++) {
-            if (i >= u_maxIterations) break;
-            vec4 reference = referenceOrbitAt(i);
-            vec2 referenceReal = vec2(reference.x, reference.y);
-            vec2 referenceImaginary = vec2(reference.z, reference.w);
-
-            vec2 realLinear = ddAdd(
-                ddMultiply(referenceReal, deltaReal),
-                -ddMultiply(referenceImaginary, deltaImaginary)
-            );
-            vec2 imaginaryLinear = ddAdd(
-                ddMultiply(referenceReal, deltaImaginary),
-                ddMultiply(referenceImaginary, deltaReal)
-            );
-            vec2 deltaRealSquared = ddMultiply(deltaReal, deltaReal);
-            vec2 deltaImaginarySquared = ddMultiply(deltaImaginary, deltaImaginary);
-            vec2 deltaProduct = ddMultiply(deltaReal, deltaImaginary);
-            deltaReal = ddAdd(ddAdd(ddAdd(realLinear, realLinear),
-                ddAdd(deltaRealSquared, -deltaImaginarySquared)), dcReal);
-            deltaImaginary = ddAdd(ddAdd(ddAdd(imaginaryLinear, imaginaryLinear),
-                ddAdd(deltaProduct, deltaProduct)), dcImaginary);
-
-            // Bail out using Z(n + 1) + dz(n + 1), not dz alone.
-            vec4 nextReference = referenceOrbitAt(i + 1);
-            vec2 zReal = ddAdd(vec2(nextReference.x, nextReference.y), deltaReal);
-            vec2 zImaginary = ddAdd(vec2(nextReference.z, nextReference.w), deltaImaginary);
-            vec2 magnitude = ddAdd(ddMultiply(zReal, zReal), ddMultiply(zImaginary, zImaginary));
-            float magnitudeSquared = ddValue(magnitude);
-            if (magnitudeSquared > 4.0) return continuousIteration(i, magnitudeSquared);
+    vec4 complexMultiplyDD(vec4 a, vec4 b) {
+        return vec4(ddAdd(ddMultiply(a.xy, b.xy), -ddMultiply(a.zw, b.zw)),
+                    ddAdd(ddMultiply(a.xy, b.zw), ddMultiply(a.zw, b.xy)));
+    }
+    vec4 complexAddDD(vec4 a, vec4 b) {
+        return vec4(ddAdd(a.xy,b.xy),ddAdd(a.zw,b.zw));
+    }
+    float mandelbrotPerturbation(vec4 pixelDelta) {
+        // Conservative interior shortcut: leave a margin around the analytic
+        // boundaries so a rounded center cannot swallow deep boundary detail.
+        vec2 c = u_centerHi + vec2(pixelDelta.x, pixelDelta.z);
+        float q = (c.x - 0.25)*(c.x - 0.25) + c.y*c.y;
+        if (q*(q+c.x-0.25) < 0.25*c.y*c.y - 0.00001 ||
+            (c.x+1.0)*(c.x+1.0)+c.y*c.y < 0.0625 - 0.00001) return -1.0;
+        vec4 dc = complexAddDD(pixelDelta, u_referenceDelta);
+        vec4 dz = vec4(0.0);
+        int referenceIndex = 0;
+        int iteration = 0;
+        if (u_seriesIteration > 0 && u_seriesIteration < u_maxIterations) {
+            vec4 t = vec4(ddMultiply(dc.xy,u_seriesInverse),ddMultiply(dc.zw,u_seriesInverse));
+            dz = complexMultiplyDD(complexAddDD(complexMultiplyDD(
+                 complexAddDD(complexMultiplyDD(u_series[3],t),u_series[2]),t),u_series[1]),t);
+            dz = complexMultiplyDD(complexAddDD(dz,u_series[0]),t);
+            iteration = u_seriesIteration;
+            referenceIndex = iteration;
+        }
+        for (int step = 0; step < LOOP_LIMIT; step++) {
+            if (iteration >= u_maxIterations) break;
+            vec4 reference = referenceOrbitAt(referenceIndex);
+            vec4 linear = complexMultiplyDD(reference,dz);
+            vec2 rr = ddMultiply(dz.xy,dz.xy);
+            vec2 ii = ddMultiply(dz.zw,dz.zw);
+            vec2 ri = ddMultiply(dz.xy,dz.zw);
+            dz = complexAddDD(complexAddDD(complexAddDD(linear,linear),
+                 vec4(ddAdd(rr,-ii),ddAdd(ri,ri))),dc);
+            referenceIndex++;
+            vec4 z = complexAddDD(referenceOrbitAt(referenceIndex),dz);
+            float magnitudeSquared = z.x*z.x + z.z*z.z;
+            if (magnitudeSquared > 4.0) return continuousIteration(iteration, magnitudeSquared);
+            iteration++;
+            if (magnitudeSquared < dz.x*dz.x + dz.z*dz.z || float(referenceIndex) >= u_referenceOrbitLength - 1.0) {
+                dz = z;
+                referenceIndex = 0;
+            }
         }
         return -1.0;
     }
 
     void main() {
-        vec2 uv = gl_FragCoord.xy / u_resolution;
-        float aspect = u_resolution.x / u_resolution.y;
-        vec2 pixelDelta = (uv - 0.5) * vec2(aspect, 1.0) * 3.0 / u_zoom;
-
+        vec2 pixel = gl_FragCoord.xy - 0.5 * u_resolution;
         float escapeIteration;
-        if (u_usePerturbation > 0.5) {
-            escapeIteration = mandelbrotPerturbation(pixelDelta);
-        } else if (u_useDoubleDouble > 0.5) {
-            escapeIteration = mandelbrotDoubleDouble(pixelDelta);
+        if (u_usePerturbation > 0.5 || u_useDoubleDouble > 0.5) {
+            vec4 pixelDelta = vec4(ddMultiply(vec2(pixel.x,0.0),u_pixelScale),
+                                   ddMultiply(vec2(pixel.y,0.0),u_pixelScale));
+            if (u_usePerturbation > 0.5) escapeIteration = mandelbrotPerturbation(pixelDelta);
+            else escapeIteration = mandelbrotDoubleDouble(pixelDelta);
         } else {
-            escapeIteration = mandelbrotDirect(pixelDelta + u_centerHi + u_centerLo);
+            escapeIteration = mandelbrotDirect(pixel * u_pixelScale.x + u_centerHi + u_centerLo);
         }
 
+        // Screen-space relief adds no work inside the fractal iteration loop.
+        // Derivatives are evaluated for every fragment, before the interior branch.
+        float escaped = max(escapeIteration, 0.0);
+        vec2 slope = vec2(0.0);
+        #ifdef GL_OES_standard_derivatives
+        slope = vec2(dFdx(escaped), dFdy(escaped)) * u_renderScale;
+        #endif
         float color = 0.0;
         if (escapeIteration >= 0.0) {
-            // Absolute escape-time tones do not change when the preview iteration
-            // budget changes. Broad waves form clean, deliberate gray regions.
-            float tone = 0.58 + 0.30 * cos(escapeIteration * 0.16);
-            float deepening = clamp(escapeIteration / 1800.0, 0.0, 1.0) * 0.12;
-            color = clamp(tone - deepening, 0.16, 0.92);
+            float phase = escaped * 0.16;
+            float bandwidth = length(slope);
+            float fineVisibility = 1.0 - smoothstep(0.5, 3.0, bandwidth);
+            float tone = 0.58 + 0.30 * cos(phase);
+            tone += 0.035 * sin(escaped * 0.8) * fineVisibility;
+            // A restrained bevel on the contours, lit from the upper left.
+            vec2 relief = slope * (-sin(phase)) * 0.24;
+            float light = dot(relief, normalize(vec2(-0.6, 0.8))) / sqrt(1.0 + dot(relief, relief));
+            float deepening = clamp(escaped / 1800.0, 0.0, 1.0) * 0.12;
+            color = clamp(tone + light * 0.13 - deepening, 0.12, 0.94);
         }
-
         gl_FragColor = vec4(vec3(color), 1.0);
     }
 `;

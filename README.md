@@ -79,16 +79,27 @@ Useful development URLs:
 
 The fractal renders at a 2× internal drawing resolution by default and is downsampled to the viewport for smoother edges. Add `quality=native` while developing on a slower machine to render at the display's native pixel ratio instead.
 
-During panning, wheel zoom, and camera animation, rendering automatically drops to a 1× preview while retaining the same iteration budget as the settled frame. After 140 ms without input, a sharper 2× frame replaces it. This keeps the fractal boundary and grayscale stable during movement—the only temporary quality change is spatial resolution. At zooms above 100,000×, the renderer switches to error-compensated double-double arithmetic so coordinate detail is retained instead of being approximated by unstable perturbation textures.
+During dragging, pinch zoom, wheel zoom, and camera animation, rendering uses a 1× preview with the same iteration budget as the settled image. After 160 ms without wheel input (or when dragging ends), a 2× frame refines the contours. The renderer only reallocates its drawing buffer when its size actually changes.
 
-The grayscale palette is based on absolute continuous escape time rather than the current iteration budget. Consequently, pixels that resolve in both the interactive and final pass keep the same shade instead of flickering when refinement begins. The visual suite includes a detailed one-trillion-times depth probe and checks its tonal range.
+Camera coordinates use 70-digit fixed-point integers. At 20,000×, a Web Worker builds a high-precision reference orbit; the GPU then uses float-pair perturbation, including rebasing for escaping references. The reference stays active during movement and is reused for nearby views. A bounded fourth-order series skips early iterations, and tighter series are prepared in the background as zoom increases. The iteration budget grows continuously up to 4,096. A new reference at extreme zoom temporarily retains the previous complete image instead of drawing an inaccurate preview.
+
+Decimal coordinate strings preserve deep locations through scene JSON and author-mode copying. `getState()` keeps numeric `centerX`/`centerY` for compatibility and includes `preciseCenterX`/`preciseCenterY` strings for lossless round trips. The zoom cap is 10²⁶× to leave headroom for GPU float-pair residuals; without workers or float textures, the direct float-pair fallback caps navigation at 10¹⁰×. More iterations may still be needed to resolve particularly intricate regions.
+
+The monochrome palette uses continuous escape time, subtle contour relief and finer bands with suppression of subpixel detail. Shading stays outside the fractal iteration loop. Browsers without shader derivatives retain the tonal palette without the relief.
 
 Renderer state is available for profiling in the browser console:
 
 ```js
 window.fractalRenderer.getDiagnostics()
-// { mode: "final", scale: 2, iterations: 687, precision: "direct", pixels: ... }
+// { mode: "final", scale: 2, iterations: 687, precision: "direct",
+//   pendingReference: false, referenceBuilds: 0, skippedIterations: 0, ... }
+await window.fractalRenderer.whenReady() // wait for a required reference and draw submission
+window.site.setCamera({
+    centerX: "-1.999999999999999999999998", centerY: "0", zoom: 1e24
+})
 ```
+
+`npm run test:fractal` checks precision and reference arithmetic. `npm run test:fractal-browser` checks completed GPU frames against independent 70-digit CPU samples (including 10²⁴× boundary detail), tests mouse/touch navigation, and records software-rendered benchmarks in `artifacts/screenshots/fractal-performance.json`. Set `FRACTAL_ROOT` to a baseline checkout to compare identical workloads. These software timings measure regressions, not a hardware GPU's frame rate. `npm run visual-check` captures all five scenes at desktop/mobile sizes and verifies deep rendering and idle refinement.
 
 Press `D` to toggle author mode. Pan and zoom to a composition you like, then use **Copy scene JSON** to copy a ready-to-edit scene definition. Arrow keys move between scenes; number keys jump directly to them.
 
