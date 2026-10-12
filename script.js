@@ -23,7 +23,10 @@ function resizeDrawingBuffer() {
     const quality = new URLSearchParams(window.location.search).get('quality');
     const deviceScale = Math.max(1, window.devicePixelRatio || 1);
     const finalScale = quality === 'native' ? deviceScale : Math.max(2, deviceScale);
-    const desiredScale = renderMode === 'interactive' ? 1 : finalScale;
+    // A 1× preview is useful at ordinary scales, but it becomes visibly blocky
+    // once individual fractal features are only a few screen pixels wide.
+    // Preserve the settled sampling density while exploring a deep location.
+    const desiredScale = renderMode === 'interactive' && zoom < DEEP_PERTURBATION_ZOOM ? 1 : finalScale;
     const maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS) || [width * finalScale, height * finalScale];
     renderScale = Math.min(desiredScale, maxViewport[0] / width, maxViewport[1] / height);
 
@@ -306,6 +309,83 @@ const centerHiLocation = gl.getUniformLocation(program, 'u_centerHi');
 const centerLoLocation = gl.getUniformLocation(program, 'u_centerLo');
 const maxIterationsLocation = gl.getUniformLocation(program, 'u_maxIterations');
 const useDoubleDoubleLocation = gl.getUniformLocation(program, 'u_useDoubleDouble');
+const usePerturbationLocation = gl.getUniformLocation(program, 'u_usePerturbation');
+const referenceOrbitLocation = gl.getUniformLocation(program, 'u_referenceOrbit');
+const referenceOrbitLengthLocation = gl.getUniformLocation(program, 'u_referenceOrbitLength');
+
+// Reference-orbit arithmetic deliberately lives outside JavaScript Number.  A
+// 70-decimal-place fixed point is inexpensive for a 1,500 step orbit, yet has
+// enough headroom for camera locations far beyond a double's 15-16 digits.
+const REFERENCE_DIGITS = 70;
+const DEEP_PERTURBATION_ZOOM = 200000;
+const REFERENCE_SCALE = 10n ** BigInt(REFERENCE_DIGITS);
+const REFERENCE_ESCAPE_SQUARED = 64n * REFERENCE_SCALE * REFERENCE_SCALE;
+const floatTextureExtension = gl.getExtension('OES_texture_float');
+const referenceOrbitTexture = floatTextureExtension ? gl.createTexture() : null;
+let referenceOrbitCache = null;
+
+function fixedFromNumber(value) {
+    if (!Number.isFinite(value)) throw new Error('A finite camera coordinate is required');
+    const [coefficient, exponentText] = value.toExponential(68).split('e');
+    const negative = coefficient.startsWith('-');
+    const unsigned = negative ? coefficient.slice(1) : coefficient;
+    const digits = unsigned.replace('.', '') || '0';
+    const fractionDigits = (unsigned.split('.')[1] || '').length;
+    const exponent = Number(exponentText) - fractionDigits + REFERENCE_DIGITS;
+    let integer = BigInt(digits);
+    integer = exponent >= 0 ? integer * (10n ** BigInt(exponent)) : integer / (10n ** BigInt(-exponent));
+    return negative ? -integer : integer;
+}
+
+function fixedToFloatPair(value) {
+    const high = Number(value) / Number(REFERENCE_SCALE);
+    const remainder = value - fixedFromNumber(high);
+    const low = Number(remainder) / Number(REFERENCE_SCALE);
+    return [high, low];
+}
+
+function buildReferenceOrbit(real, imaginary, iterations) {
+    const cReal = fixedFromNumber(real);
+    const cImaginary = fixedFromNumber(imaginary);
+    let zReal = 0n;
+    let zImaginary = 0n;
+    const orbit = new Float32Array((iterations + 1) * 4);
+    for (let iteration = 0; iteration <= iterations; iteration++) {
+        const [realHigh, realLow] = fixedToFloatPair(zReal);
+        const [imaginaryHigh, imaginaryLow] = fixedToFloatPair(zImaginary);
+        const offset = iteration * 4;
+        orbit[offset] = realHigh;
+        orbit[offset + 1] = realLow;
+        orbit[offset + 2] = imaginaryHigh;
+        orbit[offset + 3] = imaginaryLow;
+        if (iteration === iterations) break;
+        const nextReal = (zReal * zReal - zImaginary * zImaginary) / REFERENCE_SCALE + cReal;
+        zImaginary = (2n * zReal * zImaginary) / REFERENCE_SCALE + cImaginary;
+        zReal = nextReal;
+        if (zReal * zReal + zImaginary * zImaginary > REFERENCE_ESCAPE_SQUARED) return null;
+    }
+    return orbit;
+}
+
+function prepareReferenceOrbit(iterations) {
+    if (!referenceOrbitTexture || iterations + 1 > gl.getParameter(gl.MAX_TEXTURE_SIZE)) return false;
+    const key = `${centerX}|${centerY}|${iterations}`;
+    if (!referenceOrbitCache || referenceOrbitCache.key !== key) {
+        const orbit = buildReferenceOrbit(centerX, centerY, iterations);
+        if (!orbit) return false;
+        referenceOrbitCache = { key, orbit, length: iterations + 1 };
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, referenceOrbitTexture);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, referenceOrbitCache.length, 1, 0,
+            gl.RGBA, gl.FLOAT, referenceOrbitCache.orbit);
+    }
+    return true;
+}
 
 // View state
 let zoom = 1.35;
@@ -618,6 +698,11 @@ function render() {
     // the lower-resolution framebuffer is the interactive performance lever.
     const adaptiveIterations = detailIterations;
     const useDoubleDouble = zoom > 100000;
+    // Reference-orbit perturbation is intentionally deferred while dragging:
+    // rebuilding a 70-digit orbit every pointer event would make navigation
+    // feel sticky.  The settled frame gets the deep path after 140 ms.
+    const shouldUsePerturbation = zoom >= DEEP_PERTURBATION_ZOOM && renderMode === 'final';
+    const usePerturbation = shouldUsePerturbation && prepareReferenceOrbit(adaptiveIterations);
     const centerXParts = splitForGPU(centerX);
     const centerYParts = splitForGPU(centerY);
     
@@ -628,6 +713,13 @@ function render() {
     gl.uniform2f(centerLoLocation, centerXParts.low, centerYParts.low);
     gl.uniform1i(maxIterationsLocation, adaptiveIterations);
     gl.uniform1f(useDoubleDoubleLocation, useDoubleDouble ? 1 : 0);
+    gl.uniform1f(usePerturbationLocation, usePerturbation ? 1 : 0);
+    if (usePerturbation) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, referenceOrbitTexture);
+        gl.uniform1i(referenceOrbitLocation, 0);
+        gl.uniform1f(referenceOrbitLengthLocation, referenceOrbitCache.length);
+    }
     
     // Clear and draw
     gl.clearColor(0, 0, 0, 1);
@@ -638,7 +730,10 @@ function render() {
         mode: renderMode,
         scale: renderScale,
         iterations: adaptiveIterations,
-        precision: useDoubleDouble ? 'double-double' : 'direct',
+        precision: usePerturbation ? 'reference-orbit perturbation' : (useDoubleDouble ? 'double-double' : 'direct'),
+        precisionFallback: shouldUsePerturbation && !usePerturbation
+            ? 'reference orbit escaped or float textures are unavailable'
+            : null,
         pixels: canvas.width * canvas.height
     };
     

@@ -245,6 +245,20 @@ try {
     await writeFile(deepDestination, Buffer.from(deepScreenshot.data, 'base64'));
     console.log(`captured depth probe at 1,000,000,000,000× (${depthStats.tonalBuckets} tonal buckets)`);
 
+    const perturbationCheck = await client.command('Runtime.evaluate', {
+        expression: `(() => {
+            // A bounded reference orbit exercises the perturbation path itself;
+            // escaping views continue to use direct double-double arithmetic.
+            window.site.setCamera({ centerX: -0.5, centerY: 0, zoom: 1e20 });
+            return window.fractalRenderer.getDiagnostics();
+        })()`,
+        returnByValue: true
+    }, sessionId);
+    if (perturbationCheck.result.value.precision !== 'reference-orbit perturbation') {
+        throw new Error(`Deep renderer did not activate: ${JSON.stringify(perturbationCheck.result.value)}`);
+    }
+    console.log('verified reference-orbit perturbation at 100,000,000,000,000,000,000×');
+
     const projectionCheck = await client.command('Runtime.evaluate', {
         expression: `(async () => {
             await window.site.gotoScene('home', { animate: false });

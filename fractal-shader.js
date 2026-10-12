@@ -9,6 +9,9 @@ window.fractalFragmentShaderSource = `
     uniform vec2 u_centerLo;
     uniform int u_maxIterations;
     uniform float u_useDoubleDouble;
+    uniform float u_usePerturbation;
+    uniform sampler2D u_referenceOrbit;
+    uniform float u_referenceOrbitLength;
 
     const int LOOP_LIMIT = 2000;
     const float DD_SPLITTER = 4097.0;
@@ -114,13 +117,63 @@ window.fractalFragmentShaderSource = `
         return -1.0;
     }
 
+    // The reference orbit is calculated on the CPU with fixed-point integers.
+    // For a pixel c = C + dc, iterate only dz where z = Z + dz:
+    // dz(n+1) = 2 Z(n) dz(n) + dz(n)^2 + dc.  This keeps the GPU values small
+    // even when dc is far below the precision of a native float.
+    vec4 referenceOrbitAt(int iteration) {
+        float x = (float(iteration) + 0.5) / u_referenceOrbitLength;
+        return texture2D(u_referenceOrbit, vec2(x, 0.5));
+    }
+
+    float mandelbrotPerturbation(vec2 pixelDelta) {
+        vec2 deltaReal = vec2(0.0);
+        vec2 deltaImaginary = vec2(0.0);
+        vec2 dcReal = vec2(pixelDelta.x, 0.0);
+        vec2 dcImaginary = vec2(pixelDelta.y, 0.0);
+
+        for (int i = 0; i < LOOP_LIMIT; i++) {
+            if (i >= u_maxIterations) break;
+            vec4 reference = referenceOrbitAt(i);
+            vec2 referenceReal = vec2(reference.x, reference.y);
+            vec2 referenceImaginary = vec2(reference.z, reference.w);
+
+            vec2 realLinear = ddAdd(
+                ddMultiply(referenceReal, deltaReal),
+                -ddMultiply(referenceImaginary, deltaImaginary)
+            );
+            vec2 imaginaryLinear = ddAdd(
+                ddMultiply(referenceReal, deltaImaginary),
+                ddMultiply(referenceImaginary, deltaReal)
+            );
+            vec2 deltaRealSquared = ddMultiply(deltaReal, deltaReal);
+            vec2 deltaImaginarySquared = ddMultiply(deltaImaginary, deltaImaginary);
+            vec2 deltaProduct = ddMultiply(deltaReal, deltaImaginary);
+            deltaReal = ddAdd(ddAdd(ddAdd(realLinear, realLinear),
+                ddAdd(deltaRealSquared, -deltaImaginarySquared)), dcReal);
+            deltaImaginary = ddAdd(ddAdd(ddAdd(imaginaryLinear, imaginaryLinear),
+                ddAdd(deltaProduct, deltaProduct)), dcImaginary);
+
+            // Bail out using Z(n + 1) + dz(n + 1), not dz alone.
+            vec4 nextReference = referenceOrbitAt(i + 1);
+            vec2 zReal = ddAdd(vec2(nextReference.x, nextReference.y), deltaReal);
+            vec2 zImaginary = ddAdd(vec2(nextReference.z, nextReference.w), deltaImaginary);
+            vec2 magnitude = ddAdd(ddMultiply(zReal, zReal), ddMultiply(zImaginary, zImaginary));
+            float magnitudeSquared = ddValue(magnitude);
+            if (magnitudeSquared > 4.0) return continuousIteration(i, magnitudeSquared);
+        }
+        return -1.0;
+    }
+
     void main() {
         vec2 uv = gl_FragCoord.xy / u_resolution;
         float aspect = u_resolution.x / u_resolution.y;
         vec2 pixelDelta = (uv - 0.5) * vec2(aspect, 1.0) * 3.0 / u_zoom;
 
         float escapeIteration;
-        if (u_useDoubleDouble > 0.5) {
+        if (u_usePerturbation > 0.5) {
+            escapeIteration = mandelbrotPerturbation(pixelDelta);
+        } else if (u_useDoubleDouble > 0.5) {
             escapeIteration = mandelbrotDoubleDouble(pixelDelta);
         } else {
             escapeIteration = mandelbrotDirect(pixelDelta + u_centerHi + u_centerLo);
