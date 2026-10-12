@@ -1,6 +1,9 @@
 {
   "name": "ani-fractal-portfolio",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "build": "node tools/build-site.mjs",
     "check": "node --check script.js && node --check fractal-shader.js && node --check scene-data.js && node --check site-controller.js && node --check tools/sync-resume.mjs",
