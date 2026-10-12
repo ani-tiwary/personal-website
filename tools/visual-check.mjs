@@ -12,6 +12,8 @@ const mime = {
     '.js': 'text/javascript; charset=utf-8',
     '.css': 'text/css; charset=utf-8',
     '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.pdf': 'application/pdf',
     '.ttf': 'font/ttf'
 };
 
@@ -177,7 +179,7 @@ try {
         awaitPromise: true
     }, sessionId);
 
-    const scenes = ['home', 'about', 'work'];
+    const scenes = ['home', 'about', 'work', 'resume', 'media'];
     const viewports = [
         { name: 'desktop', width: 1440, height: 900 },
         { name: 'mobile', width: 390, height: 844 }

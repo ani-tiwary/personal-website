@@ -12,6 +12,49 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
+## Resume updates from Overleaf
+
+The Resume section embeds `media/resume.pdf` and includes open/download links. The PDF retains its original colors in dark mode. Home has no portrait or visible scrollbar; the longer sections remain scrollable.
+
+`tools/sync-resume.mjs` opens your Overleaf **view-only sharing link** in a temporary Chrome session and downloads the latest compiled PDF. It requires Node 22+ and Chrome (`CHROME_PATH` can override the executable). It validates the PDF before replacing the existing file, retains the previous copy on failure, and skips identical downloads. The sharing link stays in the `OVERLEAF_URL` environment variable or GitHub secret, never the public site.
+
+For a local refresh, enter the sharing link at the hidden prompt:
+
+```bash
+read -rsp 'Overleaf view-only link: ' OVERLEAF_URL
+export OVERLEAF_URL
+npm run sync-resume
+unset OVERLEAF_URL
+```
+
+The workflow `.github/workflows/sync-resume.yml` checks at 05:23 and 17:23 UTC daily and can also run from **Actions → Sync resume from Overleaf → Run workflow**. It commits only `media/resume.pdf` when the file changes. Edit and recompile normally in Overleaf; updates appear after the next successful run and deployment, not instantly. Local checkouts receive those remote updates on `git pull`.
+
+To activate it:
+
+1. Push the workflow, updater, PDF, and website changes to the repository's default branch. Scheduled workflows only run from that branch.
+2. Set the repository's Actions secret `OVERLEAF_URL` to the full view-only sharing link, including its `#…` fragment. This was configured during setup for `ani-tiwary/personal-website`.
+3. Connect the repository to Vercel or Netlify. Both configs build with `npm run build` and publish `dist/`.
+4. Add an Actions secret `DEPLOY_HOOK_URL` for reliable deployment after a resume update. On [Vercel](https://vercel.com/docs/deploy-hooks), create a hook under **Settings → Git → Deploy Hooks** for `main`. On [Netlify](https://docs.netlify.com/build/configure-builds/build-hooks/), create a build hook for `main`. Keep the hook URL in the secret, not in source code.
+5. Run the workflow once and check both the Actions result and the hosting dashboard. Manual runs also request a deployment when the PDF is unchanged, allowing a failed deployment to be retried.
+
+Until the workflow is pushed, there is no scheduled updater running remotely. Without the optional hook, the workflow saves the PDF to Git and relies on the host's Git auto-deploy integration. Public-repository schedules may be disabled by GitHub after 60 days of repository inactivity; re-enable from Actions if needed. If Overleaf changes its download control or presents a browser challenge, the run fails and the last good PDF remains available.
+
+Run `npm run test:resume` to check that invalid downloads preserve the existing PDF.
+
+## Content to finish
+
+The five sections now have labeled placeholders, using `assignment/website_rubric.md` as a loose content guide. Fill these in through `scene-data.js`:
+
+1. **About:** add your education/background story.
+2. **Work:** replace the four placeholder cards in `content.projects` with project names and descriptions. For at least two, explain purpose, contribution, tools, and outcome, and add demo/source links.
+3. **Resume:** keep editing the Overleaf resume; `media/resume.pdf` is the displayed copy. The old `resume.tex` file is not used by the updater.
+4. **Media:** write introductions connecting each sample to a project, then replace the slots with embedded video, audio, and a rotating image slideshow. Include captions/transcripts, alt text, and accessible controls.
+5. **Finish:** check phone layouts, light/dark contrast, keyboard navigation, and real links. Publish to the intended public host and verify access while signed out.
+
+Text comes first; the assignment separates the basic site from the later multimedia work. Placeholders are scaffolding, not completed rubric content. The site still uses hash-addressable scenes within one HTML document; confirm whether the assignment accepts these as its five pages before submission.
+
+Media and project slots support direct links such as `/#media/video`, `/#media/audio`, `/#media/slideshow`, and `/#work/project-one`. Longer panels scroll independently of the fractal canvas. The `placeholders` array supplies titles, prompts, and related links; remove the placeholder styling/status when replacing a slot with finished content.
+
 ## Add or edit a scene
 
 Edit `scene-data.js`. A scene contains an `id`, navigation `label`, fractal `camera`, and DOM `content`. Navigation and scene numbering are generated automatically.

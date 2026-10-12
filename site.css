@@ -216,6 +216,58 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 .scene-panel.is-visible { opacity: 1; }
 .scene-panel[data-align="center"] { text-align: center; }
 
+.scene-scroll {
+    max-height: calc(100vh - 15rem);
+    max-height: calc(100dvh - 15rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-gutter: stable;
+    padding: .3rem .65rem .4rem .3rem;
+    pointer-events: auto;
+}
+
+.scene-panel[data-scene="home"] .scene-scroll {
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+}
+.scene-panel[data-scene="home"] .scene-scroll::-webkit-scrollbar { display: none; }
+
+.scene-panel[data-surface="true"] .scene-title { font-size: clamp(2.5rem, 5vw, 4.5rem); }
+.scene-panel[data-surface="true"] .scene-copy { margin-top: 1.2rem; }
+
+.content-placeholders { display: grid; gap: .85rem; margin-top: 1.5rem; }
+.content-placeholder {
+    padding: 1.1rem;
+    border: 1px dashed var(--line);
+    border-radius: .85rem;
+    background: rgba(255,255,255,.24);
+    scroll-margin-top: .4rem;
+}
+.placeholder-status { margin: 0 0 .55rem; font-size: .6rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.placeholder-title { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -.025em; }
+.placeholder-copy, .placeholder-prompts { margin: .6rem 0 0; font-size: .8rem; line-height: 1.65; }
+.placeholder-prompts { padding-left: 1.1rem; }
+.content-placeholder .scene-links { margin-top: .85rem; gap: .45rem; }
+.content-placeholder .scene-link { padding: .5rem .7rem; font-size: .68rem; }
+:root[data-theme="dark"] .resume-frame { filter: invert(1); }
+.project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; margin-top: 1.5rem; }
+.project-card { padding: 1.2rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(255,255,255,.32); scroll-margin-top: .4rem; }
+.project-number { margin: 0 0 1.4rem; font-size: .6rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.project-title { margin: 0; font-size: 1.2rem; font-weight: 650; letter-spacing: -.035em; }
+.project-description { margin: .75rem 0 0; font-size: .8rem; line-height: 1.65; }
+.project-card .scene-links { margin-top: 1rem; gap: .4rem; }
+.project-card .scene-link { padding: .45rem .65rem; font-size: .65rem; }
+.scene-panel[data-scene="resume"][data-surface="true"] { width: min(58rem, calc(100vw - 2.5rem)); }
+.resume-actions { margin-top: 1rem; }
+.resume-frame { display: block; width: 100%; height: 36rem; margin-top: 1.25rem; border: 1px solid var(--line); border-radius: .6rem; background: white; color-scheme: light; }
+.scene-panel[data-scene="home"] .scene-copy {
+    padding: .6rem .8rem;
+    border-radius: .6rem;
+    background: var(--paper);
+    backdrop-filter: blur(12px);
+}
+
 .scene-panel[data-surface="true"] {
     width: min(43rem, calc(100vw - 2.5rem));
     padding: clamp(1.5rem, 3vw, 3rem);
@@ -429,8 +481,12 @@ kbd { padding: .18rem .38rem; border: 1px solid #aaa; border-radius: .25rem; bac
 @keyframes float { 50% { transform: translateY(-.45rem); } }
 
 @media (max-width: 620px) {
+    .project-grid { grid-template-columns: 1fr; }
+    .resume-frame { height: 28rem; }
     .site-header { grid-template-columns: 1fr auto; padding-top: 1.2rem; }
     #navBar { grid-row: 2; grid-column: 1 / -1; justify-self: center; margin-top: 1rem; }
+    .nav-button { padding: .55rem .65rem; }
+    .scene-scroll { max-height: calc(100vh - 18rem); max-height: calc(100dvh - 18rem); }
     .header-actions { grid-column: 2; grid-row: 1; }
     .scene-panel, .scene-panel[data-align] { text-align: left; }
     [data-align="center"] .scene-eyebrow, [data-align="center"] .scene-links, [data-align="center"] .scene-socials { justify-content: flex-start; }
@@ -444,11 +500,11 @@ kbd { padding: .18rem .38rem; border: 1px solid #aaa; border-radius: .25rem; bac
 }
 
 @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; }
 }
 
 .is-motionless *, .is-motionless *::before, .is-motionless *::after {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
+    transition-duration: 0s !important;
 }

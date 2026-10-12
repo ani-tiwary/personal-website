@@ -72,8 +72,12 @@
     }
 
     function requestedScene() {
-        const requested = window.location.hash.slice(1) || params.get('scene');
+        const requested = window.location.hash.slice(1).split('/')[0] || params.get('scene');
         return findScene(requested) || scenes[0];
+    }
+
+    function requestedSection() {
+        return window.location.hash.slice(1).split('/')[1];
     }
 
     function makeElement(tag, className, text) {
@@ -117,10 +121,67 @@
         panel.dataset.align = scene.content.align || 'left';
         panel.dataset.surface = String(Boolean(scene.content.surface));
         panel.dataset.scene = scene.id;
+        const body = makeElement('div', 'scene-scroll');
+        body.tabIndex = 0;
+        body.setAttribute('role', 'region');
+        body.setAttribute('aria-label', `${scene.label} content`);
+        panel.append(body);
 
-        panel.append(makeElement('p', 'scene-eyebrow', scene.content.eyebrow));
-        panel.append(makeSceneTitle(scene.content.title, scene.content.titleAccent));
-        if (scene.content.body) panel.append(makeElement('p', 'scene-copy', scene.content.body));
+        if (scene.content.eyebrow) body.append(makeElement('p', 'scene-eyebrow', scene.content.eyebrow));
+        body.append(makeSceneTitle(scene.content.title, scene.content.titleAccent));
+        if (scene.content.body) body.append(makeElement('p', 'scene-copy', scene.content.body));
+        if (scene.content.projects?.length) {
+            const grid = makeElement('div', 'project-grid');
+            scene.content.projects.forEach((project, index) => {
+                const card = makeElement('section', 'project-card');
+                card.id = `${scene.id}-${project.id}`;
+                card.tabIndex = -1;
+                card.append(makeElement('p', 'project-number', `0${index + 1} / Coming soon`));
+                card.append(makeElement('h2', 'project-title', project.title));
+                card.append(makeElement('p', 'project-description', project.description));
+                if (project.links?.length) card.append(makeSceneLinks(project.links));
+                grid.append(card);
+            });
+            body.append(grid);
+        }
+        if (scene.content.resume) {
+            const { src, title } = scene.content.resume;
+            const actions = makeElement('div', 'scene-links resume-actions');
+            const open = makeElement('a', 'scene-link', 'Open PDF');
+            open.href = src;
+            open.target = '_blank';
+            open.rel = 'noopener';
+            const download = makeElement('a', 'scene-link', 'Download resume');
+            download.href = src;
+            download.download = 'Ani-Tiwary-Resume.pdf';
+            actions.append(open, download);
+            const frame = makeElement('iframe', 'resume-frame');
+            // Load on first visit, avoiding an offscreen PDF viewer at startup.
+            frame.dataset.src = `${src}#view=FitH&toolbar=0`;
+            frame.title = title;
+            body.append(actions, frame);
+        }
+
+        if (scene.id === 'media') body.append(makeSceneLinks(scene.content.links));
+        if (scene.content.placeholders?.length) {
+            const placeholders = makeElement('div', 'content-placeholders');
+            scene.content.placeholders.forEach(item => {
+                const section = makeElement('section', 'content-placeholder');
+                section.id = `${scene.id}-${item.id}`;
+                section.tabIndex = -1;
+                section.append(makeElement('p', 'placeholder-status', item.medium || 'To add'));
+                section.append(makeElement('h2', 'placeholder-title', item.title));
+                section.append(makeElement('p', 'placeholder-copy', item.description));
+                if (item.prompts?.length) {
+                    const prompts = makeElement('ul', 'placeholder-prompts');
+                    item.prompts.forEach(prompt => prompts.append(makeElement('li', '', prompt)));
+                    section.append(prompts);
+                }
+                if (item.links?.length) section.append(makeSceneLinks(item.links));
+                placeholders.append(section);
+            });
+            body.append(placeholders);
+        }
 
         if (scene.content.fractalLinks?.length) {
             const fractalLinks = makeElement('div', 'fractal-links');
@@ -138,23 +199,8 @@
             panel.append(fractalLinks);
         }
 
-        if (scene.content.links?.length) {
-            const links = makeElement('div', 'scene-links');
-            scene.content.links.forEach(link => {
-                const anchor = makeElement('a', 'scene-link', link.label);
-                if (link.scene) {
-                    anchor.href = `#${link.scene}`;
-                    anchor.dataset.sceneLink = link.scene;
-                } else {
-                    anchor.href = link.href;
-                    if (/^https?:/.test(link.href)) {
-                        anchor.target = '_blank';
-                        anchor.rel = 'noreferrer';
-                    }
-                }
-                links.append(anchor);
-            });
-            panel.append(links);
+        if (scene.id !== 'media' && scene.content.links?.length) {
+            body.append(makeSceneLinks(scene.content.links));
         }
 
         if (scene.content.socialLinks?.length) {
@@ -175,12 +221,32 @@
                 socialLink.append(icon);
                 socialLinks.append(socialLink);
             });
-            panel.append(socialLinks);
+            body.append(socialLinks);
         }
 
         anchor.append(panel);
         contentRoot.append(anchor);
         requestAnimationFrame(() => panel.classList.add('is-visible'));
+    }
+
+    function makeSceneLinks(items) {
+        const links = makeElement('div', 'scene-links');
+        items.forEach(link => {
+            const anchor = makeElement('a', 'scene-link', link.label);
+            if (link.scene) {
+                anchor.href = `#${link.scene}${link.section ? `/${link.section}` : ''}`;
+                anchor.dataset.sceneLink = link.scene;
+                if (link.section) anchor.dataset.sectionLink = link.section;
+            } else {
+                anchor.href = link.href;
+                if (/^https?:/.test(link.href)) {
+                    anchor.target = '_blank';
+                    anchor.rel = 'noreferrer';
+                }
+            }
+            links.append(anchor);
+        });
+        return links;
     }
 
     // Core scenes are all kept in the fractal world at once. This lets their
@@ -209,6 +275,8 @@
         document.body.dataset.scene = scene.id;
         document.title = `${scene.label} — Ani`;
         ensureActiveSceneContent(scene);
+        const resumeFrame = contentRoot.querySelector(`[data-scene="${scene.id}"] .resume-frame`);
+        if (resumeFrame && !resumeFrame.src) resumeFrame.src = resumeFrame.dataset.src;
         positionContent(renderer.getState());
         number.textContent = String(index + 1).padStart(2, '0');
         progress.style.width = `${((index + 1) / scenes.length) * 100}%`;
@@ -251,6 +319,8 @@
             panel.style.zoom = String(rasterScale);
             panel.style.visibility = scale >= 0.02 && scale <= 32 ? 'visible' : 'hidden';
             const linksAreUsable = scale > 0.2 && scale < 5;
+            panel.inert = !linksAreUsable || scene !== activeScene;
+            panel.querySelector('.scene-scroll').style.pointerEvents = panel.inert ? 'none' : 'auto';
             panel.querySelectorAll('a, button[data-fractal-link]').forEach(link => {
                 link.style.pointerEvents = linksAreUsable ? 'auto' : 'none';
             });
@@ -268,12 +338,22 @@
         const updateURL = options.updateURL ?? true;
 
         updateSceneUI(scene);
-        if (updateURL && window.location.hash !== `#${scene.id}`) {
-            history.pushState({ scene: scene.id }, '', `#${scene.id}`);
+        const hash = `#${scene.id}${options.section ? `/${options.section}` : ''}`;
+        if (updateURL && window.location.hash !== hash) {
+            history.pushState({ scene: scene.id }, '', hash);
         }
 
         return new Promise(resolve => {
             const finish = () => afterPaint(() => {
+                const panel = contentRoot.querySelector(`[data-scene="${scene.id}"]`);
+                const section = options.section && document.getElementById(`${scene.id}-${options.section}`);
+                if (section && panel.contains(section)) {
+                    const scroll = panel.querySelector('.scene-scroll');
+                    scroll.scrollTop = section.offsetTop - scroll.offsetTop;
+                    section.focus({ preventScroll: true });
+                } else {
+                    panel.querySelector('.scene-scroll').scrollTop = 0;
+                }
                 window.dispatchEvent(new CustomEvent('site:scene-rendered', { detail: { scene: scene.id } }));
                 resolve(getState());
             });
@@ -342,7 +422,7 @@
         const link = event.target.closest('[data-scene-link]');
         if (!link) return;
         event.preventDefault();
-        gotoScene(link.dataset.sceneLink);
+        gotoScene(link.dataset.sceneLink, { section: link.dataset.sectionLink });
     });
 
     document.addEventListener('click', event => {
@@ -357,7 +437,7 @@
         else renderer.moveTo(camera, 1300);
     });
 
-    window.addEventListener('popstate', () => gotoScene(requestedScene(), { updateURL: false }));
+    window.addEventListener('popstate', () => gotoScene(requestedScene(), { updateURL: false, section: requestedSection() }));
     window.addEventListener('fractal:render', updateCameraUI);
     window.addEventListener('resize', () => positionContent());
     document.getElementById('copyPositionBtn').addEventListener('click', copySceneJSON);
@@ -405,7 +485,7 @@
     if (params.get('intro') === 'off') document.getElementById('blackOverlay').style.display = 'none';
 
     const initialScene = requestedScene();
-    gotoScene(initialScene, { animate: false, updateURL: false }).then(async () => {
+    gotoScene(initialScene, { animate: false, updateURL: false, section: requestedSection() }).then(async () => {
         try { await document.fonts.ready; } catch (_) { /* Font readiness is an enhancement. */ }
         afterPaint(() => {
             document.documentElement.dataset.ready = 'true';

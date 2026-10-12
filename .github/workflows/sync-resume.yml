@@ -1,0 +1,63 @@
+name: Sync resume from Overleaf
+
+on:
+  schedule:
+    - cron: '23 5,17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: resume-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download latest compiled resume
+        env:
+          OVERLEAF_URL: ${{ secrets.OVERLEAF_URL }}
+        run: node tools/sync-resume.mjs
+      - name: Commit an updated PDF
+        id: commit
+        run: |
+          git add media/resume.pdf
+          if git diff --cached --quiet; then
+            echo "Resume unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update resume from Overleaf"
+          git pull --rebase origin "${{ github.event.repository.default_branch }}"
+          git push origin "HEAD:${{ github.event.repository.default_branch }}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Request a Vercel or Netlify deployment
+        if: steps.commit.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.DEPLOY_HOOK_URL }}
+        run: |
+          node --input-type=module <<'JS'
+          const hook = process.env.DEPLOY_HOOK_URL;
+          if (!hook) {
+            console.log('No deploy hook configured. Connect Git auto-deploy or add DEPLOY_HOOK_URL.');
+            process.exit(0);
+          }
+          try {
+            const response = await fetch(hook, { method: 'POST', signal: AbortSignal.timeout(30000) });
+            if (!response.ok) throw new Error();
+            console.log('Deployment requested. Check the hosting dashboard for completion.');
+          } catch {
+            console.error('Deploy hook failed. The PDF is saved in Git; rerun this workflow to retry deployment.');
+            process.exitCode = 1;
+          }
+          JS
