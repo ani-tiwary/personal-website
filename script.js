@@ -1,11 +1,20 @@
 /* GPU Mandelbrot renderer. Public camera numbers remain compatible with the DOM
    scene projection; preciseCenterX/Y preserve all 70 decimal places for navigation. */
 (() => {
+    try {
+        initializeRenderer();
+    } catch (error) {
+        // The content controller supplies navigation without graphics if startup fails.
+        delete window.fractalRenderer;
+        console.warn('Fractal renderer unavailable:', error);
+    }
+
+    function initializeRenderer() {
     const canvas = document.getElementById('fractalCanvas');
     const params = new URLSearchParams(location.search);
     const gl = canvas.getContext('webgl', { preserveDrawingBuffer: params.get('capture') === 'on', antialias: false });
     if (!gl) {
-        console.error('WebGL is unavailable');
+        console.warn('WebGL is unavailable');
         return;
     }
     const math = FractalMath;
@@ -221,7 +230,9 @@
         if (!segments.length) { setCamera(camera); return; }
         const began = performance.now();
         function tick(now) {
-            const progress = Math.min(1, (now - began) / Math.max(1, duration));
+            // A frame's timestamp can precede a click handled in that same frame.
+            // Clamp the lower bound too, otherwise the first segment index is -1.
+            const progress = Math.max(0, Math.min(1, (now - began) / Math.max(1, duration)));
             const index = Math.min(segments.length - 1, Math.floor(progress * segments.length));
             const t = ease(Math.min(1, progress * segments.length - index));
             const { from, to } = segments[index];
@@ -285,16 +296,12 @@
     canvas.addEventListener('pointercancel', release);
     canvas.addEventListener('lostpointercapture', release);
     window.addEventListener('resize', () => { width = innerWidth; height = innerHeight; queueRender(); });
-    const overlay = document.getElementById('blackOverlay');
-    function enter(event) {
-        if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
-        if (overlay.classList.contains('is-dismissed')) return;
-        event.preventDefault(); overlay.classList.add('is-dismissed');
-        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    function reveal() {
+        if (params.get('motion') === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
         stopAnimation(); mode = 'interactive';
         const began = performance.now();
         function reveal(now) {
-            const t = Math.min(1, (now - began) / 1800);
+            const t = Math.max(0, Math.min(1, (now - began) / 1800));
             iterationLimit = Math.max(1, Math.floor(MAX_ITERATIONS * ease(t)));
             render();
             if (t < 1) animation = requestAnimationFrame(reveal);
@@ -302,10 +309,8 @@
         }
         animation = requestAnimationFrame(reveal);
     }
-    overlay?.addEventListener('click', enter, { once: true });
-    overlay?.addEventListener('keydown', enter);
     window.fractalRenderer = {
-        getState, setCamera, moveTo, render,
+        getState, setCamera, moveTo, render, reveal,
         getDiagnostics: () => ({ ...diagnostics }),
         getResolution: () => ({ cssWidth: width, cssHeight: height, pixelWidth: canvas.width, pixelHeight: canvas.height, scale: renderScale }),
         whenReady() {
@@ -315,4 +320,5 @@
     };
     window.addEventListener('pagehide', event => { if (!event.persisted) worker?.terminate(); });
     render();
+    }
 })();

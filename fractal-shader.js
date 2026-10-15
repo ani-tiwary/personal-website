@@ -46,15 +46,32 @@ window.fractalFragmentShaderSource = `
         return max(0.0, float(iteration) + 1.0 - log(max(logMagnitude, 0.000001)) / log(2.0));
     }
 
+    // Two inexpensive exterior steps remove visible escape-ring seams from
+    // smooth coloring. Stop at a safe magnitude before repeated squaring overflows.
+    float finishEscape(int iteration, vec2 z, vec2 c) {
+        int smoothIteration = iteration;
+        if (dot(z, z) <= 65536.0) {
+            z = complexSquare(z) + c;
+            smoothIteration++;
+            if (dot(z, z) <= 65536.0) {
+                z = complexSquare(z) + c;
+                smoothIteration++;
+            }
+        }
+        return continuousIteration(smoothIteration, dot(z, z));
+    }
+
     float mandelbrotDirect(vec2 c) {
         if (isKnownInterior(c)) return -1.0;
         vec2 z = vec2(0.0);
+        int escapedAt = -1;
         for (int i = 0; i < LOOP_LIMIT; i++) {
             if (i >= u_maxIterations) break;
             z = complexSquare(z) + c;
-            float magnitudeSquared = dot(z, z);
-            if (magnitudeSquared > 4.0) return continuousIteration(i, magnitudeSquared);
+            if (dot(z, z) > 4.0) { escapedAt = i; break; }
         }
+        // Keep exterior smoothing outside the divergent iteration loop.
+        if (escapedAt >= 0) return finishEscape(escapedAt, z, c);
         return -1.0;
     }
 
@@ -105,6 +122,7 @@ window.fractalFragmentShaderSource = `
         vec2 cImaginary = ddAdd(vec2(u_centerHi.y, u_centerLo.y), pixelDelta.zw);
         vec2 zReal = vec2(0.0);
         vec2 zImaginary = vec2(0.0);
+        int escapedAt = -1;
 
         for (int i = 0; i < LOOP_LIMIT; i++) {
             if (i >= u_maxIterations) break;
@@ -120,8 +138,9 @@ window.fractalFragmentShaderSource = `
                 ddMultiply(zImaginary, zImaginary)
             );
             float magnitudeSquared = ddValue(magnitude);
-            if (magnitudeSquared > 4.0) return continuousIteration(i, magnitudeSquared);
+            if (magnitudeSquared > 4.0) { escapedAt = i; break; }
         }
+        if (escapedAt >= 0) return finishEscape(escapedAt, vec2(ddValue(zReal), ddValue(zImaginary)), vec2(ddValue(cReal), ddValue(cImaginary)));
         return -1.0;
     }
 
@@ -152,6 +171,8 @@ window.fractalFragmentShaderSource = `
         vec4 dz = vec4(0.0);
         int referenceIndex = 0;
         int iteration = 0;
+        int escapedAt = -1;
+        vec2 escapedZ = vec2(0.0);
         if (u_seriesIteration > 0 && u_seriesIteration < u_maxIterations) {
             vec4 t = vec4(ddMultiply(dc.xy,u_seriesInverse),ddMultiply(dc.zw,u_seriesInverse));
             dz = complexMultiplyDD(complexAddDD(complexMultiplyDD(
@@ -172,13 +193,18 @@ window.fractalFragmentShaderSource = `
             referenceIndex++;
             vec4 z = complexAddDD(referenceOrbitAt(referenceIndex),dz);
             float magnitudeSquared = z.x*z.x + z.z*z.z;
-            if (magnitudeSquared > 4.0) return continuousIteration(iteration, magnitudeSquared);
+            if (magnitudeSquared > 4.0) {
+                escapedAt = iteration;
+                escapedZ = vec2(ddValue(z.xy), ddValue(z.zw));
+                break;
+            }
             iteration++;
             if (magnitudeSquared < dz.x*dz.x + dz.z*dz.z || float(referenceIndex) >= u_referenceOrbitLength - 1.0) {
                 dz = z;
                 referenceIndex = 0;
             }
         }
+        if (escapedAt >= 0) return finishEscape(escapedAt, escapedZ, c);
         return -1.0;
     }
 
@@ -205,14 +231,34 @@ window.fractalFragmentShaderSource = `
         if (escapeIteration >= 0.0) {
             float phase = escaped * 0.16;
             float bandwidth = length(slope);
-            float fineVisibility = 1.0 - smoothstep(0.5, 3.0, bandwidth);
-            float tone = 0.58 + 0.30 * cos(phase);
-            tone += 0.035 * sin(escaped * 0.8) * fineVisibility;
-            // A restrained bevel on the contours, lit from the upper left.
-            vec2 relief = slope * (-sin(phase)) * 0.24;
-            float light = dot(relief, normalize(vec2(-0.6, 0.8))) / sqrt(1.0 + dot(relief, relief));
-            float deepening = clamp(escaped / 1800.0, 0.0, 1.0) * 0.12;
-            color = clamp(tone + light * 0.13 - deepening, 0.12, 0.94);
+            float fineVisibility = 1.0 - smoothstep(0.5, 2.5, bandwidth);
+            float wave = 0.5 + 0.5 * cos(phase);
+            float tone = 0.30 + 0.58 * smoothstep(0.0, 1.0, wave);
+            tone += 0.022 * sin(escaped * 0.8) * fineVisibility;
+
+            // A satin surface: broad, soft light and a narrow polished edge.
+            // All material work is once per pixel, outside the orbit calculation.
+            vec2 relief = slope * (-sin(phase)) * 0.42;
+            relief /= 1.0 + 0.12 * length(relief);
+            vec3 normal = normalize(vec3(-relief, 1.0));
+            vec3 lightDirection = vec3(-0.408248, 0.408248, 0.816497);
+            float diffuse = dot(normal, lightDirection) - lightDirection.z;
+            float highlight = max(0.0, dot(normal, vec3(-0.214186, 0.214186, 0.953021)));
+            float flatHighlight = 0.953021;
+            // Power 16 gives a soft glint without a texture or another render pass.
+            highlight *= highlight; highlight *= highlight;
+            highlight *= highlight; highlight *= highlight;
+            flatHighlight *= flatHighlight; flatHighlight *= flatHighlight;
+            flatHighlight *= flatHighlight; flatHighlight *= flatHighlight;
+            float depth = clamp(escaped / 1800.0, 0.0, 1.0);
+            float shading = diffuse * 0.18 + (highlight - flatHighlight) * 0.12;
+            color = clamp(tone + shading - depth * 0.10, 0.10, 0.96);
+
+            // Sub-byte, stationary dither keeps broad gradients smooth on 8-bit
+            // displays. CSS-pixel anchoring prevents grain changing on refinement.
+            vec2 grainPixel = floor(gl_FragCoord.xy / u_renderScale);
+            float grain = fract(52.9829189 * fract(dot(grainPixel, vec2(0.06711056, 0.00583715))));
+            color += (grain - 0.5) / 255.0;
         }
         gl_FragColor = vec4(vec3(color), 1.0);
     }

@@ -70,7 +70,13 @@
                 zi=2n*zr*zi/m.SCALE+ci; zr=next;
                 const magnitude = zr*zr+zi*zi;
                 if(magnitude>4n*m.SCALE*m.SCALE) {
-                    expected=Math.max(0,i+1-Math.log(0.5*Math.log(Number(magnitude)/Number(m.SCALE*m.SCALE)))/Math.LN2);
+                    let smoothIndex=i, smoothMagnitude=magnitude;
+                    for(let extra=0;extra<2 && smoothMagnitude<=65536n*m.SCALE*m.SCALE;extra++) {
+                        const exterior=(zr*zr-zi*zi)/m.SCALE+cr;
+                        zi=2n*zr*zi/m.SCALE+ci; zr=exterior;
+                        smoothMagnitude=zr*zr+zi*zi; smoothIndex++;
+                    }
+                    expected=Math.max(0,smoothIndex+1-Math.log(0.5*Math.log(Number(smoothMagnitude)/Number(m.SCALE*m.SCALE)))/Math.LN2);
                     escaped++; break;
                 }
             }

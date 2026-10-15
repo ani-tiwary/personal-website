@@ -85,7 +85,7 @@ Camera coordinates use 70-digit fixed-point integers. At 20,000×, a Web Worker 
 
 Decimal coordinate strings preserve deep locations through scene JSON and author-mode copying. `getState()` keeps numeric `centerX`/`centerY` for compatibility and includes `preciseCenterX`/`preciseCenterY` strings for lossless round trips. The zoom cap is 10²⁶× to leave headroom for GPU float-pair residuals; without workers or float textures, the direct float-pair fallback caps navigation at 10¹⁰×. More iterations may still be needed to resolve particularly intricate regions.
 
-The monochrome palette uses continuous escape time, subtle contour relief and finer bands with suppression of subpixel detail. Shading stays outside the fractal iteration loop. Browsers without shader derivatives retain the tonal palette without the relief.
+The monochrome palette uses smooth escape-time coloring, satin contour lighting and finer bands with suppression of subpixel detail. Two bounded exterior steps soften escape-ring seams; soft directional light and restrained highlights give the contours a carved appearance. Stationary, sub-byte dithering smooths broad 8-bit gradients. Material shading stays outside the fractal iteration loop. Browsers without shader derivatives retain the tonal palette without the relief.
 
 Renderer state is available for profiling in the browser console:
 

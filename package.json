@@ -10,6 +10,7 @@
     "sync-resume": "node tools/sync-resume.mjs",
     "test:fractal": "node --test tools/fractal-math.test.mjs",
     "test:fractal-browser": "node tools/fractal-check.mjs",
+    "test:navigation": "node tools/navigation-check.mjs",
     "test:resume": "node --test tools/sync-resume.test.mjs",
     "visual-check": "node tools/visual-check.mjs"
   }
