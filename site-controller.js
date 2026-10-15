@@ -2,7 +2,8 @@
     'use strict';
 
     const scenes = window.siteScenes || [];
-    const renderer = window.fractalRenderer;
+    // The portfolio must remain usable when a browser cannot start WebGL.
+    const renderer = window.fractalRenderer || createStaticRenderer();
     const params = new URLSearchParams(window.location.search);
     const reduceMotion = params.get('motion') === 'off' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const contentRoot = document.getElementById('sceneContent');
@@ -28,6 +29,21 @@
     let resolveReady;
 
     const ready = new Promise(resolve => { resolveReady = resolve; });
+
+    function createStaticRenderer() {
+        let camera = { ...scenes[0].camera };
+        document.body.classList.add('is-static');
+        function getState() {
+            return { ...camera, centerX: Number(camera.centerX), centerY: Number(camera.centerY),
+                preciseCenterX: String(camera.centerX), preciseCenterY: String(camera.centerY) };
+        }
+        function setCamera(next) {
+            camera = { ...next };
+            window.dispatchEvent(new CustomEvent('fractal:render', { detail: getState() }));
+            window.dispatchEvent(new CustomEvent('fractal:camera-settled', { detail: getState() }));
+        }
+        return { getState, setCamera, moveTo: setCamera };
+    }
 
     function findScene(id) {
         return scenes.find(scene => scene.id === id);
@@ -467,6 +483,18 @@
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) stopThemeEasterEgg();
     });
+
+    const overlay = document.getElementById('blackOverlay');
+    function enter(event) {
+        if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+        if (overlay.classList.contains('is-dismissed')) return;
+        event.preventDefault();
+        overlay.classList.add('is-dismissed');
+        overlay.inert = true;
+        renderer.reveal?.();
+    }
+    overlay.addEventListener('click', enter);
+    overlay.addEventListener('keydown', enter);
 
     window.site = {
         ready,

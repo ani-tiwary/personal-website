@@ -50,6 +50,10 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 
 #fractalCanvas:active { cursor: grabbing; }
 
+body.is-static { background: #f6f6f3; }
+.is-static #fractalCanvas, .is-static .fractal-links,
+.is-static .camera-readout, .is-static .site-footer > p:first-child { display: none; }
+
 .texture {
     position: fixed;
     inset: 0;
