@@ -12,6 +12,8 @@
     function initializeRenderer() {
     const canvas = document.getElementById('fractalCanvas');
     const params = new URLSearchParams(location.search);
+    const preferences = window.sitePreferences;
+    let quality = preferences.getState().quality;
     const gl = canvas.getContext('webgl', { preserveDrawingBuffer: params.get('capture') === 'on', antialias: false });
     if (!gl) {
         console.warn('WebGL is unavailable');
@@ -30,6 +32,8 @@
     let mode = 'final', frame = 0, refinement = 0, animation = 0;
     let iterationLimit = MAX_ITERATIONS;
     let diagnostics = {};
+    let adaptiveScale = 1, previousFrame = 0, slowFrames = 0, fastFrames = 0;
+    let animationTarget = null;
     let cursorX = 0, cursorY = 0;
     let reference = null, pending = null, nextJob = 0, worker = null, workerError = null;
     let referenceTexture = null;
@@ -55,11 +59,9 @@
             .map(name => [name, gl.getUniformLocation(program, `u_${name}`)]));
         return { program, position, uniforms };
     }
-    // Compile away deep arithmetic entirely for the everyday portfolio scenes.
-    const basicPipeline = createPipeline(window.fractalFragmentShaderSource
-        .replace('uniform float u_usePerturbation;', 'const float u_usePerturbation = 0.0;')
-        .replace('uniform float u_useDoubleDouble;', 'const float u_useDoubleDouble = 0.0;'));
-    const precisePipeline = createPipeline(window.fractalFragmentShaderSource);
+    // Ordinary scenes should not depend on an expensive deep-zoom shader compiling.
+    const basicPipeline = createPipeline('#define FRACTAL_BASIC\n' + window.fractalFragmentShaderSource);
+    let precisePipeline = null, deepUnavailable = false;
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
@@ -74,8 +76,21 @@
     function resize() {
         width = innerWidth; height = innerHeight;
         const deviceScale = Math.max(1, devicePixelRatio || 1);
-        const finalScale = params.get('quality') === 'native' ? deviceScale : Math.max(2, deviceScale);
-        renderScale = Math.min(mode === 'interactive' ? 1 : finalScale, maxViewport[0] / width, maxViewport[1] / height);
+        const pixels = width * height;
+        let finalScale, interactiveScale;
+        if (quality === 'high' || quality === 'native') {
+            finalScale = quality === 'native' ? deviceScale : Math.max(2, deviceScale);
+            interactiveScale = 1;
+        } else {
+            // A pixel budget prevents Retina and large laptop displays multiplying GPU work.
+            const light = quality === 'low';
+            interactiveScale = Math.min(light ? 0.65 : 1, Math.sqrt((light ? 500000 : 1000000) / pixels));
+            if (!light) interactiveScale *= adaptiveScale;
+            finalScale = Math.min(light ? 1 : 2, Math.sqrt((light ? 1200000 : 3000000) / pixels));
+            if (!light) finalScale *= Math.max(0.6, adaptiveScale);
+        }
+        renderScale = Math.min(mode === 'interactive' ? interactiveScale : finalScale,
+            maxViewport[0] / width, maxViewport[1] / height);
         const w = Math.max(1, Math.round(width * renderScale)), h = Math.max(1, Math.round(height * renderScale));
         // Resizing an unchanged canvas clears it and reallocates GPU storage.
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
@@ -134,12 +149,31 @@
         return usable;
     }
     function render() {
+        const now = performance.now();
+        if (mode === 'interactive' && quality === 'auto') {
+            const elapsed = now - previousFrame;
+            if (previousFrame && elapsed < 2000) {
+                slowFrames = elapsed > 32 ? slowFrames + 1 : 0;
+                fastFrames = elapsed < 20 ? fastFrames + 1 : 0;
+                if (slowFrames >= 3) { adaptiveScale = Math.max(0.4, adaptiveScale * 0.8); slowFrames = 0; }
+                if (fastFrames >= 45) { adaptiveScale = Math.min(1, adaptiveScale + 0.1); fastFrames = 0; }
+            }
+            previousFrame = now;
+        } else { previousFrame = 0; slowFrames = 0; fastFrames = 0; }
+        if (zoom >= DEEP_ZOOM && !precisePipeline && !deepUnavailable) {
+            try { precisePipeline = createPipeline(window.fractalFragmentShaderSource); }
+            catch (error) {
+                deepUnavailable = true;
+                console.warn('Deep zoom unavailable; retaining the lightweight renderer:', error);
+            }
+        }
+        if (deepUnavailable) zoom = Math.min(zoom, DEEP_ZOOM - 1);
         const deep = zoom >= DEEP_ZOOM;
         const { program, position, uniforms } = deep ? precisePipeline : basicPipeline;
         const usePerturbation = deep && prepareReference();
         const iterations = Math.min(iterationLimit, MAX_ITERATIONS,
             Math.max(120, Math.floor(120 + Math.log2(Math.max(1, zoom)) * 45 + Math.max(0, Math.log2(zoom / DEEP_ZOOM)) * 20)));
-        diagnostics = { mode, scale: renderScale, iterations,
+        diagnostics = { mode, scale: renderScale, iterations, quality, adaptiveScale, deepUnavailable,
             precision: usePerturbation ? 'reference-orbit perturbation' : (deep ? 'double-double' : 'direct'),
             pendingReference: deep && !!worker && !usePerturbation,
             precisionFallback: deep && !worker ? (workerError || 'Float textures or workers unavailable') : null,
@@ -190,10 +224,12 @@
     function interact() {
         mode = 'interactive'; queueRender();
         clearTimeout(refinement);
-        refinement = setTimeout(refine, 160);
+        // Trackpad momentum often pauses briefly; avoid a costly full-size frame mid-gesture.
+        refinement = setTimeout(refine, 280);
     }
     function stopAnimation() {
         cancelAnimationFrame(animation); animation = 0;
+        animationTarget = null;
         iterationLimit = MAX_ITERATIONS;
     }
     function parseCamera(camera) {
@@ -206,7 +242,7 @@
         if (!Number.isFinite(scale) || scale <= 0 || Math.abs(math.number(x)) > 1e6 || Math.abs(math.number(y)) > 1e6) {
             throw Error('Invalid fractal camera');
         }
-        return { x, y, zoom: Math.max(0.0001, Math.min(worker ? MAX_ZOOM : 1e10, scale)) };
+        return { x, y, zoom: Math.max(0.0001, Math.min(deepUnavailable ? DEEP_ZOOM - 1 : worker ? MAX_ZOOM : 1e10, scale)) };
     }
     function setCamera(camera) {
         const next = parseCamera(camera);
@@ -217,8 +253,9 @@
     const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     function moveTo(camera, duration = 2000) {
         const target = parseCamera(camera);
-        if (matchMedia('(prefers-reduced-motion: reduce)').matches || duration <= 0) { setCamera(camera); return; }
+        if (preferences.getState().reduceMotion || duration <= 0) { setCamera(camera); return; }
         stopAnimation(); clearTimeout(refinement); mode = 'interactive';
+        animationTarget = camera;
         const start = { x: centerX, y: centerY, zoom };
         const sameCenter = start.x === target.x && start.y === target.y;
         // Travel between compositions at a wide scale; preserve exact endpoints during zoom.
@@ -251,7 +288,7 @@
         centerY += math.fromNumber(dy * 3 / (height * zoom));
     }
     function zoomAt(factor, x, y) {
-        const next = Math.max(0.0001, Math.min(worker ? MAX_ZOOM : 1e10, zoom * factor));
+        const next = Math.max(0.0001, Math.min(deepUnavailable ? DEEP_ZOOM - 1 : worker ? MAX_ZOOM : 1e10, zoom * factor));
         const shift = 3 / zoom - 3 / next;
         centerX += math.fromNumber((x - width / 2) / height * shift);
         centerY += math.fromNumber((height / 2 - y) / height * shift);
@@ -260,7 +297,13 @@
     canvas.addEventListener('wheel', event => {
         event.preventDefault(); stopAnimation();
         const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
-        zoomAt(Math.exp(-Math.max(-120, Math.min(120, event.deltaY * units)) * 0.0018), event.clientX, event.clientY);
+        let delta = Math.max(-120, Math.min(120, event.deltaY * units));
+        if (event.deltaMode === 0 && !event.ctrlKey) {
+            // Boost small trackpad deltas while retaining a 120px mouse-wheel step.
+            const magnitude = Math.abs(delta);
+            delta = Math.sign(delta) * (magnitude <= 40 ? magnitude * 2.5 : 100 + (magnitude - 40) * 0.25);
+        }
+        zoomAt(Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.0018)), event.clientX, event.clientY);
         interact();
     }, { passive: false });
     const pointers = new Map();
@@ -297,7 +340,7 @@
     canvas.addEventListener('lostpointercapture', release);
     window.addEventListener('resize', () => { width = innerWidth; height = innerHeight; queueRender(); });
     function reveal() {
-        if (params.get('motion') === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        if (preferences.getState().reduceMotion) return;
         stopAnimation(); mode = 'interactive';
         const began = performance.now();
         function reveal(now) {
@@ -318,6 +361,17 @@
             return new Promise(resolve => readyWaiters.add(resolve));
         }
     };
+    window.addEventListener('site:preferences', ({ detail }) => {
+        if (quality !== detail.quality) {
+            quality = detail.quality;
+            adaptiveScale = 1;
+            queueRender();
+        }
+        if (detail.reduceMotion && animation) {
+            if (animationTarget) setCamera(animationTarget);
+            else { stopAnimation(); refine(); }
+        }
+    });
     window.addEventListener('pagehide', event => { if (!event.persisted) worker?.terminate(); });
     render();
     }

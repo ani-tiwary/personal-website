@@ -21,7 +21,11 @@ window.fractalFragmentShaderSource = `
     uniform sampler2D u_referenceOrbit;
     uniform float u_referenceOrbitLength;
 
+    #ifdef FRACTAL_BASIC
+    const int LOOP_LIMIT = 1024;
+    #else
     const int LOOP_LIMIT = 4096;
+    #endif
     const float DD_SPLITTER = 4097.0;
 
     bool isKnownInterior(vec2 c) {
@@ -75,6 +79,7 @@ window.fractalFragmentShaderSource = `
         return -1.0;
     }
 
+    #ifndef FRACTAL_BASIC
     // A double-double is vec2(high, low). The low component explicitly carries
     // the rounding error discarded by the high component.
     vec2 ddNormalize(float high, float low) {
@@ -208,9 +213,14 @@ window.fractalFragmentShaderSource = `
         return -1.0;
     }
 
+    #endif
+
     void main() {
         vec2 pixel = gl_FragCoord.xy - 0.5 * u_resolution;
         float escapeIteration;
+        #ifdef FRACTAL_BASIC
+        escapeIteration = mandelbrotDirect(pixel * u_pixelScale.x + u_centerHi + u_centerLo);
+        #else
         if (u_usePerturbation > 0.5 || u_useDoubleDouble > 0.5) {
             vec4 pixelDelta = vec4(ddMultiply(vec2(pixel.x,0.0),u_pixelScale),
                                    ddMultiply(vec2(pixel.y,0.0),u_pixelScale));
@@ -219,6 +229,7 @@ window.fractalFragmentShaderSource = `
         } else {
             escapeIteration = mandelbrotDirect(pixel * u_pixelScale.x + u_centerHi + u_centerLo);
         }
+        #endif
 
         // Screen-space relief adds no work inside the fractal iteration loop.
         // Derivatives are evaluated for every fragment, before the interior branch.

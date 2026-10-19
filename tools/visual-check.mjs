@@ -98,7 +98,7 @@ function connect(websocketURL) {
 
 async function capture(client, sessionId, scene, viewport) {
     const destination = join(output, `${scene}-${viewport.name}.png`);
-    const url = `http://127.0.0.1:${port}/?intro=off&motion=off&capture=on&scene=${scene}`;
+    const url = `http://127.0.0.1:${port}/?intro=off&motion=off&capture=on&quality=high&scene=${scene}`;
 
     await client.command('Emulation.setDeviceMetricsOverride', {
         width: viewport.width,
@@ -171,7 +171,7 @@ try {
 
     // Warm SwiftShader once before the measured captures; its first compiled frame can be blank.
     await client.command('Emulation.setDeviceMetricsOverride', { width: 800, height: 600, deviceScaleFactor: 1, mobile: false }, sessionId);
-    await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?intro=off&motion=off&capture=on&scene=home` }, sessionId);
+    await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?intro=off&motion=off&capture=on&quality=high&scene=home` }, sessionId);
     await client.command('Runtime.evaluate', {
         expression: `new Promise(resolve => {
             (function waitForRenderer() {

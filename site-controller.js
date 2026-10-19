@@ -5,7 +5,7 @@
     // The portfolio must remain usable when a browser cannot start WebGL.
     const renderer = window.fractalRenderer || createStaticRenderer();
     const params = new URLSearchParams(window.location.search);
-    const reduceMotion = params.get('motion') === 'off' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let reduceMotion = window.sitePreferences.getState().reduceMotion;
     const contentRoot = document.getElementById('sceneContent');
     const navRoot = document.getElementById('navBar');
     const authorPanel = document.getElementById('authorPanel');
@@ -307,6 +307,7 @@
     // like geometry in the WebGL world while remaining semantic and accessible.
     function positionContent(camera = renderer.getState()) {
         const aspect = window.innerWidth / window.innerHeight;
+        const moving = window.fractalRenderer?.getDiagnostics().mode === 'interactive';
         contentRoot.querySelectorAll('.scene-anchor').forEach(anchor => {
             const scene = findScene(anchor.dataset.sceneAnchor);
             const panel = anchor.querySelector('.scene-panel');
@@ -325,15 +326,20 @@
             const screenY = (0.5 - (worldY - camera.centerY) * camera.zoom / 3) * window.innerHeight;
             const scale = camera.zoom / reference.zoom;
 
+            const halfWidth = Math.min(624, innerWidth - 40) * scale / 2;
+            const halfHeight = innerHeight * scale / 2;
+            const visible = scale >= 0.02 && scale <= 32
+                && screenX + halfWidth > -100 && screenX - halfWidth < innerWidth + 100
+                && screenY + halfHeight > -100 && screenY - halfHeight < innerHeight + 100;
+            panel.style.visibility = visible ? 'visible' : 'hidden';
+            if (!visible) { panel.inert = true; return; }
+
             anchor.style.left = `${screenX}px`;
             anchor.style.top = `${screenY}px`;
 
-            // CSS transforms often scale a cached bitmap of the whole element. CSS zoom
-            // participates in layout, so the browser rasterizes glyphs at their displayed
-            // size and keeps the typography sharp as the fractal camera gets closer.
-            const rasterScale = Math.min(32, Math.max(0.02, scale));
-            panel.style.zoom = String(rasterScale);
-            panel.style.visibility = scale >= 0.02 && scale <= 32 ? 'visible' : 'hidden';
+            // Composite cached text while moving; rasterize crisp glyphs once settled.
+            panel.style.zoom = moving ? '1' : String(scale);
+            panel.style.transform = moving ? `translate(-50%, -50%) scale(${scale})` : '';
             const linksAreUsable = scale > 0.2 && scale < 5;
             panel.inert = !linksAreUsable || scene !== activeScene;
             panel.querySelector('.scene-scroll').style.pointerEvents = panel.inert ? 'none' : 'auto';
@@ -462,7 +468,11 @@
         setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
     });
     window.addEventListener('keydown', event => {
-        if (event.key === 'Escape') stopThemeEasterEgg();
+        if (event.key === 'Escape') {
+            stopThemeEasterEgg();
+            const settings = document.getElementById('displaySettings');
+            if (settings.open) { settings.open = false; settings.querySelector('summary').focus(); }
+        }
 
         const target = event.target;
         const isTypingField = target instanceof HTMLElement
@@ -475,6 +485,7 @@
             }
         }
 
+        if (isTypingField || event.ctrlKey || event.metaKey || event.altKey) return;
         if (event.key.toLowerCase() === 'd') setAuthorMode(!authorMode);
         if (event.key === 'ArrowRight') gotoScene(adjacentScene(1));
         if (event.key === 'ArrowLeft') gotoScene(adjacentScene(-1));
@@ -496,6 +507,29 @@
     overlay.addEventListener('click', enter);
     overlay.addEventListener('keydown', enter);
 
+    const motionPreference = document.getElementById('motionPreference');
+    const qualityPreference = document.getElementById('qualityPreference');
+    function updatePreferences() {
+        const state = window.sitePreferences.getState();
+        reduceMotion = state.reduceMotion;
+        if (reduceMotion) stopThemeEasterEgg();
+        motionPreference.value = state.motion;
+        qualityPreference.value = state.quality;
+        qualityPreference.disabled = !window.fractalRenderer;
+        document.getElementById('displayStatus').textContent = !window.fractalRenderer
+            ? 'Fractal animation is unavailable in this browser. All sections are still accessible.'
+            : state.reduceMotion
+                ? state.motion === 'auto' ? 'Animations are off because of your device setting.' : 'Animations are off.'
+                : state.quality === 'auto' ? 'Animations are on. Detail adapts to your device.' : 'Animations are on.';
+    }
+    motionPreference.addEventListener('change', () => window.sitePreferences.set('motion', motionPreference.value));
+    qualityPreference.addEventListener('change', () => window.sitePreferences.set('quality', qualityPreference.value));
+    window.addEventListener('site:preferences', updatePreferences);
+    document.addEventListener('click', event => {
+        const settings = document.getElementById('displaySettings');
+        if (!settings.contains(event.target)) settings.open = false;
+    });
+
     window.site = {
         ready,
         scenes,
@@ -509,7 +543,7 @@
     renderPersistentContent();
     setTheme(document.documentElement.dataset.theme, false);
     setAuthorMode(authorMode);
-    document.body.classList.toggle('is-motionless', reduceMotion);
+    updatePreferences();
     if (params.get('intro') === 'off') document.getElementById('blackOverlay').style.display = 'none';
 
     const initialScene = requestedScene();
