@@ -16,7 +16,7 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="site.css?v=20261012">
+    <link rel="stylesheet" href="site.css?v=20261019">
 </head>
 <body>
     <a class="skip-link" href="#sceneContent">Skip to content</a>
@@ -29,6 +29,25 @@
         <a class="wordmark" href="#home" data-scene-link="home" aria-label="Ani, home">ani<span>.</span></a>
         <nav id="navBar" aria-label="Primary navigation"></nav>
         <div class="header-actions">
+            <details class="display-settings" id="displaySettings">
+                <summary>Display</summary>
+                <div class="display-options">
+                    <label for="motionPreference">Animations</label>
+                    <select id="motionPreference">
+                        <option value="auto">Use device setting</option>
+                        <option value="on">On</option>
+                        <option value="off">Off</option>
+                    </select>
+                    <label for="qualityPreference">Fractal detail</label>
+                    <select id="qualityPreference">
+                        <option value="auto">Automatic</option>
+                        <option value="low">Lighter / save battery</option>
+                        <option value="high">High detail</option>
+                        <option value="native">Screen resolution</option>
+                    </select>
+                    <p id="displayStatus" role="status"></p>
+                </div>
+            </details>
             <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
                 <span class="theme-toggle-icon" aria-hidden="true"></span>
             </button>
@@ -51,6 +70,7 @@
     <script src="scene-data.js"></script>
     <script src="fractal-math.js"></script>
     <script src="fractal-shader.js"></script>
+    <script src="site-preferences.js"></script>
     <script src="script.js"></script>
     <script src="site-controller.js"></script>
 </body>
