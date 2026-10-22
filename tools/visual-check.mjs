@@ -120,10 +120,10 @@ async function capture(client, sessionId, scene, viewport) {
         returnByValue: true
     }, sessionId);
     await client.command('Runtime.evaluate', {
-        expression: `new Promise(resolve => setTimeout(() => {
+        expression: `window.fractalRenderer.whenReady().then(() => new Promise(resolve => setTimeout(() => {
             window.fractalRenderer.render();
             requestAnimationFrame(() => requestAnimationFrame(resolve));
-        }, 150))`,
+        }, 150)))`,
         awaitPromise: true,
         returnByValue: true
     }, sessionId);
@@ -144,6 +144,22 @@ async function capture(client, sessionId, scene, viewport) {
     }
     if (layout.result.value.overflow) throw new Error(`Horizontal overflow in ${scene} at ${viewport.name}`);
     if (layout.result.value.renderScale < 1.99) throw new Error(`Supersampling disabled in ${scene}: ${layout.result.value.renderScale}x`);
+
+    const composition = await client.command('Runtime.evaluate', {
+        expression: `(() => {
+            const scene = window.site.scenes.find(s => s.id === ${JSON.stringify(scene)});
+            const placement = scene.content.placement[innerWidth <= 620 ? 'mobile' : 'desktop'];
+            const anchor = document.querySelector('[data-scene-anchor="' + scene.id + '"]');
+            const r = anchor.getBoundingClientRect();
+            return { offset: Math.hypot(r.x - placement.x * innerWidth, r.y - placement.y * innerHeight),
+                usable: !anchor.querySelector('.scene-panel').inert,
+                pending: window.fractalRenderer.getDiagnostics().pendingReference };
+        })()`, returnByValue: true
+    }, sessionId);
+    const compositionStats = composition.result.value;
+    if (compositionStats.offset > 1 || !compositionStats.usable || compositionStats.pending) {
+        throw new Error(`Scene composition is not ready for ${scene}: ${JSON.stringify(compositionStats)}`);
+    }
 
     const screenshot = await client.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId);
     await writeFile(destination, Buffer.from(screenshot.data, 'base64'));
@@ -182,7 +198,7 @@ try {
         awaitPromise: true
     }, sessionId);
 
-    const scenes = ['home', 'about', 'work', 'resume', 'media'];
+    const scenes = ['home', 'about', 'work', 'resume'];
     const viewports = [
         { name: 'desktop', width: 1440, height: 900 },
         { name: 'mobile', width: 390, height: 844 }
@@ -193,6 +209,8 @@ try {
 
     const zoomOutRender = await client.command('Runtime.evaluate', {
         expression: `(() => {
+            // This numerical far-field probe expects the monochrome palette.
+            document.querySelector('[name="colourScheme"][value="light"]').click();
             window.site.setCamera({ centerX: -0.5, centerY: 0, zoom: 0.1 });
             const canvas = document.getElementById('fractalCanvas');
             const gl = canvas.getContext('webgl');

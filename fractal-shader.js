@@ -15,6 +15,7 @@ window.fractalFragmentShaderSource = `
     uniform int u_seriesIteration;
     uniform vec2 u_seriesInverse;
     uniform float u_renderScale;
+    uniform float u_colourPalette;
     uniform int u_maxIterations;
     uniform float u_useDoubleDouble;
     uniform float u_usePerturbation;
@@ -272,5 +273,36 @@ window.fractalFragmentShaderSource = `
             color += (grain - 0.5) / 255.0;
         }
         gl_FragColor = vec4(vec3(color), 1.0);
+        if (u_colourPalette > 0.5) {
+            // Colour follows the escape contours, with a broad iridescent wash.
+            // All palette work stays outside the expensive orbit calculation.
+            vec2 uv = gl_FragCoord.xy / u_resolution;
+            float t = escaped * 0.035 + uv.x * 0.42 + uv.y * 0.25;
+            // Fade unresolved colour bands to their average instead of aliasing.
+            float chroma = 1.0 - smoothstep(0.25, 1.0, length(slope) * 0.035);
+            vec3 spectrum = 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.666667, 0.333333)));
+            vec3 pigment = mix(vec3(0.5), spectrum, chroma);
+            vec3 base = vec3(0.035, 0.040, 0.075);
+            if (u_colourPalette < 1.5) {
+                pigment = 0.16 + 0.84 * pigment;
+            } else if (u_colourPalette < 2.5) {
+                // Northern-lights ribbons: mint to cyan to orchid to peach.
+                float ribbon = 0.5 + 0.5 * sin(t * 6.2831853);
+                float glow = 0.5 + 0.5 * cos(t * 6.2831853);
+                pigment = mix(vec3(0.24, 0.91, 0.73), vec3(0.68, 0.38, 0.94), ribbon);
+                pigment = mix(pigment, vec3(0.32, 0.75, 1.0), glow * 0.5);
+                pigment = mix(pigment, vec3(1.0, 0.65, 0.60), pow(ribbon, 6.0) * 0.65);
+                pigment = mix(vec3(0.55, 0.65, 0.80), pigment, chroma);
+                base = vec3(0.025, 0.065, 0.075);
+            } else {
+                // A softer pearlescent rainbow with luminous pastel contours.
+                pigment = mix(vec3(1.0), pigment, 0.38);
+                base = vec3(0.075, 0.055, 0.10);
+            }
+            float light = pow(clamp(1.0 - color, 0.0, 1.0), 0.7);
+            vec3 painted = mix(base, pigment, 0.20 + 0.76 * light);
+            if (escapeIteration < 0.0) painted = base + pigment * 0.035;
+            gl_FragColor = vec4(painted, 1.0);
+        }
     }
 `;

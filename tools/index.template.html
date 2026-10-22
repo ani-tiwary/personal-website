@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<!-- Generated from tools/index.template.html and site-content.js. Run npm run build; do not edit index.html directly. -->
+<html lang="{{meta.language}}" data-theme="rainbow" data-inverted="false">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{meta.description}}">
+    <title>{{meta.title}}</title>
+    <script>
+        (function () {
+            try {
+                const savedTheme = localStorage.getItem('theme');
+                const theme = ['rainbow', 'aurora', 'opal', 'light'].includes(savedTheme) ? savedTheme : 'rainbow';
+                document.documentElement.dataset.theme = theme;
+            } catch (_) {
+                document.documentElement.dataset.theme = 'rainbow';
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="site.css?v=20261019">
+</head>
+<body>
+    <a class="skip-link" href="#sceneContent">{{navigation.skip}}</a>
+    <div id="blackOverlay" aria-label="{{intro.label}}" role="button" tabindex="0">
+        <span class="enter-prompt">{{intro.enter}} <span aria-hidden="true">{{intro.separator}}</span> {{intro.explore}}</span>
+    </div>
+    <canvas id="fractalCanvas" aria-hidden="true"></canvas>
+    <div class="texture" aria-hidden="true"></div>
+    <header class="site-header">
+        <a class="wordmark" href="#home" data-scene-link="home" aria-label="{{header.homeLabel}}">{{header.wordmark}}<span>{{header.punctuation}}</span></a>
+        <nav id="navBar" aria-label="{{navigation.label}}"></nav>
+        <div class="header-actions">
+            <details class="display-settings" id="displaySettings">
+                <summary>{{display.label}}</summary>
+                <div class="display-options">
+                    <label for="motionPreference">{{display.motionLabel}}</label>
+                    <select id="motionPreference">
+                        <option value="on">{{display.motionOptions.on}}</option>
+                        <option value="off">{{display.motionOptions.off}}</option>
+                        <option value="auto">{{display.motionOptions.auto}}</option>
+                    </select>
+                    <label for="qualityPreference">{{display.qualityLabel}}</label>
+                    <select id="qualityPreference">
+                        <option value="auto">{{display.qualityOptions.auto}}</option>
+                        <option value="low">{{display.qualityOptions.low}}</option>
+                        <option value="high">{{display.qualityOptions.high}}</option>
+                        <option value="native">{{display.qualityOptions.native}}</option>
+                    </select>
+                    <p id="displayStatus" role="status"></p>
+                </div>
+            </details>
+            <div class="colour-settings" id="colourSettings">
+                <button id="themeToggle" class="theme-toggle" type="button" aria-label="{{theme.choose}}" aria-expanded="false" aria-controls="colourMenu" title="{{theme.title}}">
+                    <span class="theme-toggle-icon" aria-hidden="true"></span>
+                </button>
+                <div class="colour-menu" id="colourMenu" hidden>
+                    <fieldset aria-label="{{theme.title}}">
+                        <div class="colour-options">
+                            <label class="colour-option" data-palette="rainbow">
+                                <input type="radio" name="colourScheme" value="rainbow" aria-label="{{theme.options.rainbow.label}}" checked>
+                                <span class="colour-swatch" aria-hidden="true" style="--swatch-paint: linear-gradient(110deg, #ff879e, #ffc875, #d8ee86, #7ce2c9, #8ebcff, #cda0f3)"></span>
+                            </label>
+                            <label class="colour-option" data-palette="aurora">
+                                <input type="radio" name="colourScheme" value="aurora" aria-label="{{theme.options.aurora.label}}">
+                                <span class="colour-swatch" aria-hidden="true" style="--swatch-paint: linear-gradient(110deg, #70e8bc, #70d5ee, #9d9cf1, #db9ce8, #ffbaa6)"></span>
+                            </label>
+                            <label class="colour-option" data-palette="opal">
+                                <input type="radio" name="colourScheme" value="opal" aria-label="{{theme.options.opal.label}}">
+                                <span class="colour-swatch" aria-hidden="true" style="--swatch-paint: linear-gradient(110deg, #ffc9dd, #e0c7ff, #bddfff, #bff1dd, #fff0b8)"></span>
+                            </label>
+                            <label class="colour-option" data-palette="light">
+                                <input type="radio" name="colourScheme" value="light" aria-label="{{theme.options.light.label}}">
+                                <span class="colour-swatch" aria-hidden="true" style="--swatch-base: #f6f5ef; --swatch-mid: #ccc9bf; --swatch-accent: #292925"></span>
+                            </label>
+                        </div>
+                    </fieldset>
+                    <button id="invertToggle" class="invert-toggle" type="button" aria-label="{{theme.invert}}" aria-pressed="false">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                            <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                            <path d="M12 5a7 7 0 0 0 0 14Z" fill="currentColor"/>
+                            <path d="M3 7V3h4M21 17v4h-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="interaction-settings" id="interactionSettings">
+                <button id="settingsToggle" class="settings-toggle" type="button" aria-label="{{settings.label}}" aria-expanded="false" aria-controls="settingsMenu" title="{{settings.label}}">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                        <path d="M4 7h6m4 0h6M4 17h10m4 0h2"/>
+                        <circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/>
+                    </svg>
+                </button>
+                <section class="settings-menu" id="settingsMenu" aria-labelledby="settingsTitle" hidden>
+                    <h2 id="settingsTitle">{{settings.label}}</h2>
+                    <div class="sensitivity-label">
+                        <label for="scrollSensitivity">{{settings.scrollSensitivity}}</label>
+                        <output id="sensitivityValue" for="scrollSensitivity"></output>
+                    </div>
+                    <input id="scrollSensitivity" class="sensitivity-slider" type="range" min="0.25" max="3" step="0.05" value="1">
+                    <div class="sensitivity-limits" aria-hidden="true"><span>{{settings.minimum}}</span><span>{{settings.maximum}}</span></div>
+                </section>
+            </div>
+        </div>
+    </header>
+    <main id="sceneContent" class="scene-content" tabindex="-1" aria-live="polite"></main>
+    <p id="zoomOutMessage" class="zoom-out-message" role="status" hidden>{{easterEggs.zoomOut}}</p>
+    <footer class="site-footer">
+        <p id="cameraReadout" class="camera-readout"></p>
+    </footer>
+    <aside id="authorPanel" class="author-panel" aria-label="{{author.label}}" hidden>
+        <div><strong>{{author.title}}</strong><kbd>{{author.shortcut}}</kbd></div>
+        <pre id="authorCoordinates"></pre>
+        <button id="copyPositionBtn" type="button">{{author.copy}}</button>
+    </aside>
+    <div id="authorCrosshair" class="author-crosshair" hidden aria-hidden="true"></div>
+    <noscript>{{meta.noScript}}</noscript>
+    <script src="site-content.js"></script>
+    <script src="scene-data.js"></script>
+    <script src="fractal-math.js"></script>
+    <script src="camera-travel.js"></script>
+    <script src="fractal-shader.js"></script>
+    <script src="site-preferences.js"></script>
+    <script src="script.js"></script>
+    <script src="site-controller.js"></script>
+</body>
+</html>

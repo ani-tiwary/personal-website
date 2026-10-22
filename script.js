@@ -14,6 +14,8 @@
     const params = new URLSearchParams(location.search);
     const preferences = window.sitePreferences;
     let quality = preferences.getState().quality;
+    const colourPalettes = { rainbow: 1, aurora: 2, opal: 3 };
+    let colourPalette = colourPalettes[document.documentElement.dataset.theme] || 0;
     const gl = canvas.getContext('webgl', { preserveDrawingBuffer: params.get('capture') === 'on', antialias: false });
     if (!gl) {
         console.warn('WebGL is unavailable');
@@ -25,6 +27,7 @@
     const maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
     const maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     const DEEP_ZOOM = 20000;
+    const MIN_ZOOM = 0.06561864456068546;
     const MAX_ZOOM = 1e26; // Leave room for float-pair residuals above float32 underflow.
     const MAX_ITERATIONS = 4096;
     let centerX = math.parse(-1.5), centerY = 0n, zoom = 1.35;
@@ -55,7 +58,7 @@
         const position = gl.getAttribLocation(program, 'a_position');
         const uniforms = Object.fromEntries(['resolution', 'centerHi', 'centerLo', 'maxIterations',
             'useDoubleDouble', 'usePerturbation', 'pixelScale', 'series[0]', 'seriesIteration', 'seriesInverse',
-            'referenceOrbit', 'referenceOrbitLength', 'referenceDelta', 'renderScale']
+            'referenceOrbit', 'referenceOrbitLength', 'referenceDelta', 'renderScale', 'colourPalette']
             .map(name => [name, gl.getUniformLocation(program, `u_${name}`)]));
         return { program, position, uniforms };
     }
@@ -69,6 +72,9 @@
     function getState() {
         return { centerX: math.number(centerX), centerY: math.number(centerY), zoom,
             preciseCenterX: math.format(centerX), preciseCenterY: math.format(centerY), cursorX, cursorY };
+    }
+    function getMaxZoom() {
+        return deepUnavailable ? DEEP_ZOOM - 1 : worker ? MAX_ZOOM : 1e10;
     }
     function emit(type = 'fractal:render') {
         window.dispatchEvent(new CustomEvent(type, { detail: getState() }));
@@ -173,7 +179,7 @@
         const usePerturbation = deep && prepareReference();
         const iterations = Math.min(iterationLimit, MAX_ITERATIONS,
             Math.max(120, Math.floor(120 + Math.log2(Math.max(1, zoom)) * 45 + Math.max(0, Math.log2(zoom / DEEP_ZOOM)) * 20)));
-        diagnostics = { mode, scale: renderScale, iterations, quality, adaptiveScale, deepUnavailable,
+        diagnostics = { mode, scale: renderScale, iterations, quality, adaptiveScale, deepUnavailable, colourPalette,
             precision: usePerturbation ? 'reference-orbit perturbation' : (deep ? 'double-double' : 'direct'),
             pendingReference: deep && !!worker && !usePerturbation,
             precisionFallback: deep && !worker ? (workerError || 'Float textures or workers unavailable') : null,
@@ -191,6 +197,7 @@
         gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
         gl.uniform2fv(uniforms.pixelScale, math.pair(math.fromNumber(3 / (canvas.height * zoom))));
         gl.uniform1f(uniforms.renderScale, renderScale);
+        gl.uniform1f(uniforms.colourPalette, colourPalette);
         gl.uniform2f(uniforms.centerHi, x[0], y[0]);
         gl.uniform2f(uniforms.centerLo, x[1], y[1]);
         gl.uniform1i(uniforms.maxIterations, iterations);
@@ -242,7 +249,7 @@
         if (!Number.isFinite(scale) || scale <= 0 || Math.abs(math.number(x)) > 1e6 || Math.abs(math.number(y)) > 1e6) {
             throw Error('Invalid fractal camera');
         }
-        return { x, y, zoom: Math.max(0.0001, Math.min(deepUnavailable ? DEEP_ZOOM - 1 : worker ? MAX_ZOOM : 1e10, scale)) };
+        return { x, y, zoom: Math.max(MIN_ZOOM, Math.min(getMaxZoom(), scale)) };
     }
     function setCamera(camera) {
         const next = parseCamera(camera);
@@ -250,33 +257,25 @@
         centerX = next.x; centerY = next.y; zoom = next.zoom; mode = 'final';
         render(); emit('fractal:camera-settled');
     }
-    const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-    function moveTo(camera, duration = 2000) {
+    function moveTo(camera, duration) {
         const target = parseCamera(camera);
-        if (preferences.getState().reduceMotion || duration <= 0) { setCamera(camera); return; }
+        if (preferences.getState().reduceMotion || (Number.isFinite(duration) && duration <= 0)) { setCamera(camera); return; }
         stopAnimation(); clearTimeout(refinement); mode = 'interactive';
         animationTarget = camera;
         const start = { x: centerX, y: centerY, zoom };
-        const sameCenter = start.x === target.x && start.y === target.y;
-        // Travel between compositions at a wide scale; preserve exact endpoints during zoom.
-        const overview = Math.min(start.zoom, target.zoom, 1.35);
-        const stops = sameCenter ? [start, target] : [start,
-            { ...start, zoom: overview }, { ...target, zoom: overview }, target];
-        const segments = stops.slice(1).map((to, i) => ({ from: stops[i], to }))
-            .filter(({ from, to }) => from.x !== to.x || from.y !== to.y || from.zoom !== to.zoom);
-        if (!segments.length) { setCamera(camera); return; }
+        const trip = CameraTravel.plan(start, target, {
+            aspect: width / height, minZoom: MIN_ZOOM, maxZoom: getMaxZoom(),
+            minOverviewZoom: window.siteScenes.find(scene => scene.id === 'home').camera.zoom
+        });
+        duration = Number.isFinite(duration) ? duration : trip.duration;
+        if (!trip.tracks.length) { setCamera(camera); return; }
         const began = performance.now();
         function tick(now) {
             // A frame's timestamp can precede a click handled in that same frame.
-            // Clamp the lower bound too, otherwise the first segment index is -1.
+            // Clamp the lower bound too, so the camera stays at the starting point.
             const progress = Math.max(0, Math.min(1, (now - began) / Math.max(1, duration)));
-            const index = Math.min(segments.length - 1, Math.floor(progress * segments.length));
-            const t = ease(Math.min(1, progress * segments.length - index));
-            const { from, to } = segments[index];
-            const fraction = math.fromNumber(t);
-            centerX = from.x + (to.x - from.x) * fraction / math.SCALE;
-            centerY = from.y + (to.y - from.y) * fraction / math.SCALE;
-            zoom = Math.exp(Math.log(from.zoom) + (Math.log(to.zoom) - Math.log(from.zoom)) * t);
+            const next = CameraTravel.sample(trip, progress);
+            centerX = next.x; centerY = next.y; zoom = Math.max(MIN_ZOOM, next.zoom);
             render();
             if (progress < 1) animation = requestAnimationFrame(tick);
             else { animation = 0; setCamera(camera); }
@@ -288,13 +287,22 @@
         centerY += math.fromNumber(dy * 3 / (height * zoom));
     }
     function zoomAt(factor, x, y) {
-        const next = Math.max(0.0001, Math.min(deepUnavailable ? DEEP_ZOOM - 1 : worker ? MAX_ZOOM : 1e10, zoom * factor));
+        const next = Math.max(MIN_ZOOM, Math.min(getMaxZoom(), zoom * factor));
         const shift = 3 / zoom - 3 / next;
         centerX += math.fromNumber((x - width / 2) / height * shift);
         centerY += math.fromNumber((height / 2 - y) / height * shift);
         zoom = next;
     }
-    canvas.addEventListener('wheel', event => {
+    function handleWheel(event) {
+        if (event.defaultPrevented || event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+        const scroll = event.target.closest('.scene-scroll');
+        // Let long sections scroll while there is content in this direction.
+        // Pinch gestures and wheels over ordinary text still zoom the fractal.
+        if (scroll && !event.ctrlKey) {
+            const canScroll = event.deltaY < 0 ? scroll.scrollTop > 1
+                : event.deltaY > 0 && scroll.scrollTop + scroll.clientHeight < scroll.scrollHeight - 1;
+            if (canScroll) return;
+        }
         event.preventDefault(); stopAnimation();
         const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
         let delta = Math.max(-120, Math.min(120, event.deltaY * units));
@@ -303,9 +311,12 @@
             const magnitude = Math.abs(delta);
             delta = Math.sign(delta) * (magnitude <= 40 ? magnitude * 2.5 : 100 + (magnitude - 40) * 0.25);
         }
-        zoomAt(Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.0018)), event.clientX, event.clientY);
+        const sensitivity = preferences.getState().scrollSensitivity;
+        zoomAt(Math.exp(-delta * (event.ctrlKey ? 0.01 : 0.0018) * sensitivity), event.clientX, event.clientY);
         interact();
-    }, { passive: false });
+    }
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    document.getElementById('sceneContent').addEventListener('wheel', handleWheel, { passive: false });
     const pointers = new Map();
     function gesture() {
         const points = [...pointers.values()];
@@ -343,6 +354,7 @@
         if (preferences.getState().reduceMotion) return;
         stopAnimation(); mode = 'interactive';
         const began = performance.now();
+        const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
         function reveal(now) {
             const t = Math.max(0, Math.min(1, (now - began) / 1800));
             iterationLimit = Math.max(1, Math.floor(MAX_ITERATIONS * ease(t)));
@@ -353,7 +365,8 @@
         animation = requestAnimationFrame(reveal);
     }
     window.fractalRenderer = {
-        getState, setCamera, moveTo, render, reveal,
+        getState, getMaxZoom, setCamera, moveTo, render, reveal,
+        getMinZoom: () => MIN_ZOOM,
         getDiagnostics: () => ({ ...diagnostics }),
         getResolution: () => ({ cssWidth: width, cssHeight: height, pixelWidth: canvas.width, pixelHeight: canvas.height, scale: renderScale }),
         whenReady() {
@@ -361,6 +374,12 @@
             return new Promise(resolve => readyWaiters.add(resolve));
         }
     };
+    window.addEventListener('site:theme', ({ detail }) => {
+        const nextPalette = colourPalettes[detail.theme] || 0;
+        if (nextPalette === colourPalette) return;
+        colourPalette = nextPalette;
+        queueRender();
+    });
     window.addEventListener('site:preferences', ({ detail }) => {
         if (quality !== detail.quality) {
             quality = detail.quality;

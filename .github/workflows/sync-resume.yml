@@ -15,14 +15,37 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: '24'
+          package-manager-cache: false
+      - name: Install Chrome for Testing
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --max-time 30 \
+            https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json \
+            --output "$RUNNER_TEMP/chrome-versions.json"
+          chrome_download_url="$(node --input-type=module - "$RUNNER_TEMP/chrome-versions.json" <<'JS'
+          import { readFileSync } from 'node:fs';
+          const manifest = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const url = manifest.channels.Stable.downloads.chrome.find(item => item.platform === 'linux64')?.url;
+          if (!url?.startsWith('https://storage.googleapis.com/chrome-for-testing-public/')) {
+            throw new Error('Chrome for Testing did not provide a trusted Linux download.');
+          }
+          console.log(url);
+          JS
+          )"
+          curl --fail --silent --show-error --location --retry 3 --max-time 90 \
+            "$chrome_download_url" --output "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/chrome-for-testing"
+          echo "CHROME_PATH=$RUNNER_TEMP/chrome-for-testing/chrome-linux64/chrome" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/chrome-for-testing/chrome-linux64/chrome" --version
+      - name: Check browser startup
+        run: node tools/sync-resume.mjs --check-browser
       - name: Download latest compiled resume
         env:
           OVERLEAF_URL: ${{ secrets.OVERLEAF_URL }}

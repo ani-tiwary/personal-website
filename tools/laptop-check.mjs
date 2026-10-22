@@ -121,6 +121,9 @@ try {
     console.log('Passed: trackpad scrolling inside content scrolls the panel without zooming the background');
 
     await command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    assert.equal(await evaluate('window.sitePreferences.getState().motion'), 'on');
+    assert.equal(await evaluate('window.sitePreferences.getState().reduceMotion'), false);
+    await choose('motionPreference', 'auto');
     await waitFor('window.sitePreferences.getState().reduceMotion');
     await evaluate(`window.site.gotoScene('home')`);
     assert.equal(await evaluate('window.site.getState().camera.zoom'), 1.35);
@@ -143,7 +146,7 @@ try {
     await choose('motionPreference', 'auto');
     await command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
     await waitFor('!window.sitePreferences.getState().reduceMotion');
-    console.log('Passed: device motion preference, explicit animation override, persistence, and live preference changes');
+    console.log('Passed: animations default on regardless of device preference; explicit device setting, overrides, and persistence');
 
     await evaluate(`document.getElementById('displaySettings').open = true; document.getElementById('qualityPreference').focus()`);
     const scene = await evaluate('window.site.getState().scene');
@@ -182,9 +185,23 @@ try {
     assert.equal(await evaluate('window.site.getState().scene'), 'about');
     await evaluate(`window.site.setCamera({centerX:-0.743, centerY:0.13, zoom:1e6})`);
     assert.ok(await evaluate('window.fractalRenderer.getDiagnostics().deepUnavailable'));
+    for (const scene of ['about', 'work', 'resume']) {
+        const layout = await evaluate(`(async () => {
+            await window.site.gotoScene('${scene}', { animate: false });
+            const panel = document.querySelector('.scene-panel[data-scene="${scene}"]');
+            const r = panel.getBoundingClientRect();
+            const otherVisible = [...document.querySelectorAll('.scene-panel')].some(other =>
+                other !== panel && getComputedStyle(other).visibility === 'visible');
+            return { usable: !panel.inert && getComputedStyle(panel).visibility === 'visible',
+                otherVisible, width: r.width, centerX: r.x + r.width / 2, centerY: r.y + r.height / 2 };
+        })()`);
+        assert.ok(layout.usable && layout.width > 300, JSON.stringify(layout));
+        assert.equal(layout.otherVisible, false, JSON.stringify(layout));
+        assert.ok(Math.abs(layout.centerX - 195) < 1 && Math.abs(layout.centerY - 844 * 0.55) < 1, JSON.stringify(layout));
+    }
     await evaluate(`window.site.gotoScene('home', { duration: 300 })`);
     assert.equal(await evaluate('window.site.getState().camera.zoom'), 1.35);
-    console.log('Passed: deep-shader failure preserves the fractal and normal scene animations');
+    console.log('Passed: deep-shader failure preserves readable deep pages and normal scene animations');
     assert.deepEqual(client.exceptions, []);
 } finally {
     client?.close();

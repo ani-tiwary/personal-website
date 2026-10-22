@@ -34,6 +34,16 @@ try {
             await client.command('Emulation.setDeviceMetricsOverride', {
                 ...viewport, deviceScaleFactor: 1, mobile: viewport.width < 620
             }, sessionId);
+            // Exercise full-size DOM interactions without making SwiftShader render
+            // millions of deep-fractal pixels per animation frame. visual-check
+            // separately validates the compositions at full rendering resolution.
+            await client.command('Page.addScriptToEvaluateOnNewDocument', { source: `
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    return parameter === this.MAX_VIEWPORT_DIMS ? new Int32Array([640, 640])
+                        : getParameter.call(this, parameter);
+                };
+            ` }, sessionId);
             if (scenario.source) await client.command('Page.addScriptToEvaluateOnNewDocument', { source: scenario.source }, sessionId);
             async function evaluate(expression) {
                 const response = await client.command('Runtime.evaluate', {
@@ -46,12 +56,12 @@ try {
                 }
                 return response.result.value;
             }
-            async function waitFor(expression) {
+            async function waitFor(expression, timeout = 10000) {
                 await evaluate(`new Promise((resolve, reject) => {
                     const started = Date.now();
                     (function poll() {
                         if (${expression}) return resolve(true);
-                        if (Date.now() - started > 10000) return reject(Error('Timed out: ' + ${JSON.stringify(expression)}));
+                        if (Date.now() - started > ${timeout}) return reject(Error('Timed out: ' + ${JSON.stringify(expression)}));
                         setTimeout(poll, 50);
                     })();
                 })`);
@@ -71,7 +81,19 @@ try {
                 }
             }
             async function sceneReady(id) {
-                await waitFor(`window.site?.getState().scene === '${id}' && Math.abs(window.site.getState().camera.zoom - window.site.scenes.find(s => s.id === '${id}').camera.zoom) < 0.01`);
+                // Adaptive routes can exceed a fixed deadline. Include the planned
+                // remaining travel and software-GPU rendering overhead.
+                const timeout = await evaluate(`(() => {
+                    const m=window.FractalMath, current=window.site.getState().camera;
+                    const target=window.site.scenes.find(s=>s.id==='${id}').camera;
+                    const camera=s=>({x:m.parse(s.preciseCenterX??s.centerX),y:m.parse(s.preciseCenterY??s.centerY),zoom:s.zoom});
+                    const plan=window.CameraTravel.plan(camera(current),camera(target),{
+                        aspect:innerWidth/innerHeight,minZoom:window.fractalRenderer?.getMinZoom(),
+                        maxZoom:window.fractalRenderer?.getMaxZoom()
+                    });
+                    return Math.max(10000,plan.duration+5000);
+                })()`);
+                await waitFor(`window.site?.getState().scene === '${id}' && Math.abs(window.site.getState().camera.zoom - window.site.scenes.find(s => s.id === '${id}').camera.zoom) < 0.01`,timeout);
                 await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
             }
             await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?quality=native` }, sessionId);
@@ -82,24 +104,31 @@ try {
             await sceneReady('about');
             await click('.scene-panel[data-scene="about"] [data-scene-link="work"]');
             await sceneReady('work');
-            await click('.scene-panel[data-scene="work"] [data-section-link="video"]');
-            await sceneReady('media');
-            await waitFor(`document.activeElement.id === 'media-video' && location.hash === '#media/video'`);
-            await click('.scene-panel[data-scene="media"] [data-section-link="project-one"]');
-            await sceneReady('work');
-            await waitFor(`document.activeElement.id === 'work-project-one'`);
-            for (const id of ['resume', 'media', 'home', 'about', 'work']) {
+            const work = await evaluate(`({
+                tabs: [...document.querySelectorAll('#navBar [data-scene-link]')].map(b => b.dataset.sceneLink),
+                entries: document.querySelectorAll('[data-scene="work"] .experience-card').length,
+                exits: document.querySelectorAll('[data-scene="work"] .experience-card [data-scene-link], [data-fractal-link]').length
+            })`);
+            if (work.tabs.join(',') !== 'home,about,work,resume' || work.entries !== 6 || work.exits !== 0) {
+                throw Error('Entries must stay together in Experience: ' + JSON.stringify(work));
+            }
+            for (const id of ['resume', 'home', 'about', 'work']) {
                 await click(`#navBar [data-scene-link="${id}"]`);
                 await sceneReady(id);
             }
-            const theme = await evaluate('document.documentElement.dataset.theme');
             await click('#themeToggle');
-            if (await evaluate('document.documentElement.dataset.theme') === theme) throw Error('Theme toggle failed');
+            if (!await evaluate(`document.getElementById('themeToggle').getAttribute('aria-expanded') === 'true'`)) throw Error('Colour menu did not open');
+            await click('[data-palette="light"]');
+            if (await evaluate('document.documentElement.dataset.theme') !== 'light') throw Error('Colour selection failed');
+            await client.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 }, sessionId);
+            if (!await evaluate(`document.getElementById('colourMenu').hidden && document.activeElement.id === 'themeToggle'`)) throw Error('Colour menu did not dismiss');
             await evaluate('history.back()');
             await sceneReady('about');
             // Direct section entry and keyboard activation of the intro.
-            await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?motion=off#media/audio` }, sessionId);
+            await client.command('Page.navigate', { url: `http://127.0.0.1:${port}/?motion=off#work/lykke` }, sessionId);
             await waitFor(`document.documentElement?.dataset.ready === 'true'`);
+            await sceneReady('work');
+            await waitFor(`document.activeElement.id === 'work-lykke'`);
             await evaluate(`document.getElementById('blackOverlay').focus()`);
             await client.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
             await client.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
