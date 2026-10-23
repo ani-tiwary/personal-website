@@ -17,7 +17,7 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="site.css?v=2e0b687aa949">
+    <link rel="stylesheet" href="site.css?v=8b8684599fbc">
 </head>
 <body>
     <a class="skip-link" href="#sceneContent">Skip to content</a>
@@ -78,12 +78,14 @@
                             </label>
                         </div>
                     </fieldset>
-                    <button id="invertToggle" class="invert-toggle" type="button" aria-label="Invert colours" aria-pressed="false">
+                    <button id="invertToggle" class="invert-toggle" type="button" aria-label="Invert colours" aria-pressed="false" aria-keyshortcuts="i" title="Invert colours (I)">
                         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                             <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
                             <path d="M12 5a7 7 0 0 0 0 14Z" fill="currentColor"/>
                             <path d="M3 7V3h4M21 17v4h-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
+                        <span>Invert colours</span>
+                        <kbd aria-hidden="true">I</kbd>
                     </button>
                 </div>
             </div>
@@ -104,10 +106,20 @@
                     <div class="sensitivity-limits" aria-hidden="true"><span>Min</span><span>Max</span></div>
                     <label class="setting-switch" for="juliaPreviewToggle">
                         <span class="setting-switch-label">Julia set at pointer <kbd aria-hidden="true">J</kbd></span>
-                        <input id="juliaPreviewToggle" type="checkbox" role="switch" aria-describedby="juliaHint" aria-keyshortcuts="j">
+                        <input id="juliaPreviewToggle" type="checkbox" role="switch" aria-keyshortcuts="j">
                     </label>
-                    <p id="juliaHint" class="setting-hint">Preview the Julia set beneath your pointer.</p>
-                    <button id="screenshotButton" type="button" aria-keyshortcuts="o">Screenshot <kbd>O</kbd></button>
+                    <div class="screenshot-setting">
+                        <button id="screenshotButton" class="setting-action" type="button" aria-keyshortcuts="o">
+                            <span class="setting-action-label">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M8 6l1.5-2h5L16 6h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/>
+                                    <circle cx="12" cy="12" r="4"/>
+                                </svg>
+                                Save screenshot
+                            </span>
+                            <kbd aria-hidden="true">O</kbd>
+                        </button>
+                    </div>
                 </section>
             </div>
         </div>
@@ -131,7 +143,7 @@
     <script src="fractal-shader.js?v=92df5077e348"></script>
     <script src="site-preferences.js?v=cb010f110f88"></script>
     <script src="script.js?v=b2e0ee3c54ec"></script>
-    <script src="fractal-screenshot.js?v=c6cf6bbd0dc0"></script>
+    <script src="fractal-screenshot.js?v=5ab4daddb00d"></script>
     <script src="julia-preview.js?v=eea2ba34e15c"></script>
     <script src="site-controller.js?v=f3830805ce1d"></script>
 </body>

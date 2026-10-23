@@ -12,6 +12,7 @@
     const status = dialog.querySelector('p'), preview = dialog.querySelector('img');
     const save = dialog.querySelector('[data-save]');
     let url = null, filename = '', busy = false;
+    let previousFocus = null;
 
     // Standard PNG tEXt chunks, including CRC32, preserve all coordinate digits.
     function textChunk(key, value) {
@@ -31,6 +32,7 @@
     async function capture() {
         if (busy || dialog.open) return;
         busy = true;
+        previousFocus = document.activeElement;
         dialog.showModal();
         status.textContent = 'Rendering high-detail screenshot…';
         save.disabled = true; preview.hidden = true;
@@ -53,19 +55,28 @@
     dialog.querySelector('[data-close]').addEventListener('click', () => dialog.close());
     dialog.addEventListener('close', () => {
         preview.removeAttribute('src');
-        if (url) URL.revokeObjectURL(url);
+        // Allow the download to consume its URL before releasing the image.
+        const releasedURL = url;
+        if (releasedURL) setTimeout(() => URL.revokeObjectURL(releasedURL), 1000);
         url = null;
+        if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+        renderer.render();
     });
     save.addEventListener('click', () => {
         if (!url) return;
         const link = document.createElement('a');
         link.href = url; link.download = filename;
         document.body.append(link); link.click(); link.remove();
+        dialog.close();
     });
     document.getElementById('screenshotButton').addEventListener('click', capture);
     window.addEventListener('keydown', event => {
         if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey
             || event.isComposing || event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
-        if (event.key.toLowerCase() === 'o') { event.preventDefault(); capture(); }
+        if (event.key.toLowerCase() === 'o') {
+            event.preventDefault();
+            if (dialog.open) dialog.close();
+            else capture();
+        }
     });
 })();
