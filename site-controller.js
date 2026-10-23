@@ -218,8 +218,9 @@
             download.download = copy.shared.resumeFilename;
             actions.append(open, download);
             const frame = makeElement('iframe', 'resume-frame');
-            // Load on first visit, avoiding an offscreen PDF viewer at startup.
+            // Defer the PDF until this section is selected, never at home startup.
             frame.dataset.src = `${src}#view=FitH&toolbar=0`;
+            frame.hidden = true;
             frame.title = title;
             body.append(actions, frame);
         }
@@ -320,7 +321,11 @@
         document.title = text(copy.navigation.pageTitle, { scene: scene.label, name: copy.meta.name });
         ensureActiveSceneContent(scene);
         const resumeFrame = contentRoot.querySelector(`[data-scene="${scene.id}"] .resume-frame`);
-        if (resumeFrame && !resumeFrame.src) resumeFrame.src = resumeFrame.dataset.src;
+        // Browsers without an inline PDF viewer keep the explicit open/download links.
+        if (resumeFrame && !resumeFrame.hasAttribute('src') && navigator.pdfViewerEnabled !== false) {
+            resumeFrame.src = resumeFrame.dataset.src;
+            resumeFrame.hidden = false;
+        }
         positionContent(renderer.getState());
         navRoot.querySelectorAll('[data-scene-link]').forEach(button => {
             if (button.dataset.sceneLink === scene.id) button.setAttribute('aria-current', 'page');

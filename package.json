@@ -5,6 +5,7 @@
     "node": "24.x"
   },
   "scripts": {
+    "start": "node tools/serve.mjs",
     "build": "node tools/build-site.mjs",
     "check": "node --check script.js && node --check fractal-shader.js && node --check fractal-math.js && node --check fractal-worker.js && node --check site-content.js && node --check scene-data.js && node --check site-preferences.js && node --check site-controller.js && node --check tools/sync-resume.mjs && node --check tools/render-html.mjs && node --check camera-travel.js && node --check julia-preview.js",
     "sync-resume": "node tools/sync-resume.mjs",

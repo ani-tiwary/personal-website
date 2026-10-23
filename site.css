@@ -475,6 +475,7 @@ body.is-static { background: var(--base); }
 .experience-card .scene-link { padding: .45rem .65rem; font-size: .65rem; }
 .scene-panel[data-scene="resume"][data-surface="true"] { width: min(58rem, calc(100vw - 2.5rem)); }
 .resume-actions { margin-top: 1rem; }
+.resume-frame[hidden] { display: none; }
 .resume-frame { display: block; width: 100%; height: 36rem; margin-top: 1.25rem; border: 1px solid var(--line); border-radius: .6rem; background: white; }
 .scene-panel[data-scene="home"] .scene-copy {
     padding: .6rem .8rem;
@@ -705,3 +706,13 @@ kbd { padding: .18rem .38rem; border: 1px solid var(--line); border-radius: .25r
     animation-iteration-count: 1 !important;
     transition-duration: 0s !important;
 }
+
+.screenshot-dialog { width: min(46rem, 90vw); max-height: 90vh; overflow: auto; padding: 1.5rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--base); color: var(--ink); }
+.screenshot-dialog::backdrop { background: rgb(0 0 0 / .65); }
+.screenshot-dialog h2 { margin-top: 0; }
+.screenshot-dialog img { display: block; width: 100%; max-height: 60vh; object-fit: contain; border-radius: .5rem; }
+.screenshot-dialog img[hidden] { display: none; }
+:root[data-inverted="true"] .screenshot-dialog img { filter: invert(1); }
+.screenshot-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; }
+.screenshot-actions button, #screenshotButton { padding: .6rem 1rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--surface); color: var(--ink); cursor: pointer; }
+.screenshot-actions button:disabled { opacity: .5; cursor: wait; }

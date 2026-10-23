@@ -15,6 +15,7 @@ window.fractalFragmentShaderSource = `
     uniform int u_seriesIteration;
     uniform vec2 u_seriesInverse;
     uniform float u_renderScale;
+    uniform float u_capture;
     uniform float u_colourPalette;
     uniform int u_maxIterations;
     uniform float u_useDoubleDouble;
@@ -290,7 +291,7 @@ window.fractalFragmentShaderSource = `
             // displays. CSS-pixel anchoring prevents grain changing on refinement.
             vec2 grainPixel = floor(gl_FragCoord.xy / u_renderScale);
             float grain = fract(52.9829189 * fract(dot(grainPixel, vec2(0.06711056, 0.00583715))));
-            color += (grain - 0.5) / 255.0;
+            color += (grain - 0.5) / 255.0 * (1.0 - u_capture);
         }
         gl_FragColor = vec4(vec3(color), 1.0);
         if (u_colourPalette > 0.5) {

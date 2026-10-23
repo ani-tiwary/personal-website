@@ -22,8 +22,9 @@ for (const [attribute, file] of assets) {
 await writeFile(resolve(root, 'index.html'), html);
 await rm(output, { recursive: true, force: true });
 await mkdir(resolve(output, 'Manrope'), { recursive: true });
-for (const file of ['index.html', 'site.css', 'site-content.js', 'scene-data.js', 'site-controller.js', 'site-preferences.js', 'script.js', 'julia-preview.js', 'camera-travel.js', 'fractal-shader.js', 'fractal-math.js', 'fractal-worker.js', 'cursor.png', 'media']) {
+for (const file of ['index.html', 'site.css', 'site-content.js', 'scene-data.js', 'site-controller.js', 'site-preferences.js', 'script.js', 'fractal-screenshot.js', 'julia-preview.js', 'camera-travel.js', 'fractal-shader.js', 'fractal-math.js', 'fractal-worker.js', 'cursor.png', 'media']) {
     await cp(resolve(root, file), resolve(output, file), { recursive: true });
 }
 await cp(resolve(root, 'Manrope/Manrope-VariableFont_wght.ttf'), resolve(output, 'Manrope/Manrope-VariableFont_wght.ttf'));
 console.log('Static site ready in dist/.');
+

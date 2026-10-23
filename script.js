@@ -41,6 +41,7 @@
     let reference = null, pending = null, nextJob = 0, worker = null, workerError = null;
     let referenceTexture = null;
     const readyWaiters = new Set();
+    const captures = new Set();
 
     function shader(type, source) {
         const result = gl.createShader(type);
@@ -58,7 +59,7 @@
         const position = gl.getAttribLocation(program, 'a_position');
         const uniforms = Object.fromEntries(['resolution', 'centerHi', 'centerLo', 'maxIterations',
             'useDoubleDouble', 'usePerturbation', 'pixelScale', 'series[0]', 'seriesIteration', 'seriesInverse',
-            'referenceOrbit', 'referenceOrbitLength', 'referenceDelta', 'renderScale', 'colourPalette']
+            'referenceOrbit', 'referenceOrbitLength', 'referenceDelta', 'renderScale', 'colourPalette', 'capture']
             .map(name => [name, gl.getUniformLocation(program, `u_${name}`)]));
         return { program, position, uniforms };
     }
@@ -95,7 +96,10 @@
             finalScale = Math.min(light ? 1 : 2, Math.sqrt((light ? 1200000 : 3000000) / pixels));
             if (!light) finalScale *= Math.max(0.6, adaptiveScale);
         }
-        renderScale = Math.min(mode === 'interactive' ? interactiveScale : finalScale,
+        // Export independently of battery/adaptive quality. Render at twice the
+        // export resolution, then downsample to antialias fine fractal boundaries.
+        const captureScale = Math.min(Math.max(4, deviceScale * 2), Math.sqrt(32000000 / pixels));
+        renderScale = Math.min(captures.size ? captureScale : mode === 'interactive' ? interactiveScale : finalScale,
             maxViewport[0] / width, maxViewport[1] / height);
         const w = Math.max(1, Math.round(width * renderScale)), h = Math.max(1, Math.round(height * renderScale));
         // Resizing an unchanged canvas clears it and reallocates GPU storage.
@@ -177,7 +181,7 @@
         const deep = zoom >= DEEP_ZOOM;
         const { program, position, uniforms } = deep ? precisePipeline : basicPipeline;
         const usePerturbation = deep && prepareReference();
-        const iterations = Math.min(iterationLimit, MAX_ITERATIONS,
+        const iterations = captures.size ? MAX_ITERATIONS : Math.min(iterationLimit, MAX_ITERATIONS,
             Math.max(120, Math.floor(120 + Math.log2(Math.max(1, zoom)) * 45 + Math.max(0, Math.log2(zoom / DEEP_ZOOM)) * 20)));
         diagnostics = { mode, scale: renderScale, iterations, quality, adaptiveScale, deepUnavailable, colourPalette,
             precision: usePerturbation ? 'reference-orbit perturbation' : (deep ? 'double-double' : 'direct'),
@@ -198,6 +202,7 @@
         gl.uniform2fv(uniforms.pixelScale, math.pair(math.fromNumber(3 / (canvas.height * zoom))));
         gl.uniform1f(uniforms.renderScale, renderScale);
         gl.uniform1f(uniforms.colourPalette, colourPalette);
+        gl.uniform1f(uniforms.capture, captures.size ? 1 : 0);
         gl.uniform2f(uniforms.centerHi, x[0], y[0]);
         gl.uniform2f(uniforms.centerLo, x[1], y[1]);
         gl.uniform1i(uniforms.maxIterations, iterations);
@@ -218,6 +223,30 @@
             diagnostics.skippedIterations = skip;
         }
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+        if (!diagnostics.pendingReference && captures.size) {
+            // Copy before the browser discards the WebGL drawing buffer.
+            const image = document.createElement('canvas');
+            image.width = Math.max(1, Math.round(canvas.width / 2));
+            image.height = Math.max(1, Math.round(canvas.height / 2));
+            const context = image.getContext('2d');
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = 'high';
+            const inverted = document.documentElement.dataset.inverted === 'true';
+            context.filter = inverted ? 'invert(1)' : 'none';
+            context.drawImage(canvas, 0, 0, image.width, image.height);
+            const metadata = { ...getState(), width: image.width, height: image.height,
+                renderWidth: canvas.width, renderHeight: canvas.height, iterations,
+                supersampling: 2, dither: false,
+                theme: document.documentElement.dataset.theme, inverted, created: new Date().toISOString() };
+            for (const capture of captures) {
+                clearTimeout(capture.timeout);
+                image.toBlob(blob => blob ? capture.resolve({ blob, metadata })
+                    : capture.reject(new Error('Could not encode screenshot.')), 'image/png');
+            }
+            captures.clear();
+            // Return the live view to its selected performance/quality setting.
+            queueRender();
+        }
         diagnostics.scale = renderScale; diagnostics.pixels = canvas.width * canvas.height;
         emit(); resolveReady();
     }
@@ -366,6 +395,18 @@
     }
     window.fractalRenderer = {
         getState, getMaxZoom, setCamera, moveTo, render, reveal,
+        capture() {
+            stopAnimation(); clearTimeout(refinement); mode = 'final';
+            return new Promise((resolve, reject) => {
+                const capture = { resolve, reject };
+                capture.timeout = setTimeout(() => {
+                    captures.delete(capture);
+                    queueRender();
+                    reject(new Error('Screenshot timed out. Try again after rendering finishes.'));
+                }, 30000);
+                captures.add(capture); queueRender();
+            });
+        },
         getMinZoom: () => MIN_ZOOM,
         getDiagnostics: () => ({ ...diagnostics }),
         getResolution: () => ({ cssWidth: width, cssHeight: height, pixelWidth: canvas.width, pixelHeight: canvas.height, scale: renderScale }),
