@@ -21,6 +21,9 @@ window.fractalFragmentShaderSource = `
     uniform float u_usePerturbation;
     uniform sampler2D u_referenceOrbit;
     uniform float u_referenceOrbitLength;
+    #ifdef FRACTAL_JULIA
+    uniform vec2 u_juliaParameter;
+    #endif
 
     #ifdef FRACTAL_BASIC
     const int LOOP_LIMIT = 1024;
@@ -79,6 +82,21 @@ window.fractalFragmentShaderSource = `
         if (escapedAt >= 0) return finishEscape(escapedAt, z, c);
         return -1.0;
     }
+
+    #ifdef FRACTAL_JULIA
+    float juliaDirect(vec2 z) {
+        // For arbitrary c, max(2, |c|) is a safe escape radius.
+        float radiusSquared = max(4.0, dot(u_juliaParameter, u_juliaParameter));
+        int escapedAt = -1;
+        for (int i = 0; i < LOOP_LIMIT; i++) {
+            if (i >= u_maxIterations) break;
+            z = complexSquare(z) + u_juliaParameter;
+            if (dot(z, z) > radiusSquared) { escapedAt = i; break; }
+        }
+        if (escapedAt >= 0) return finishEscape(escapedAt, z, u_juliaParameter);
+        return -1.0;
+    }
+    #endif
 
     #ifndef FRACTAL_BASIC
     // A double-double is vec2(high, low). The low component explicitly carries
@@ -219,7 +237,9 @@ window.fractalFragmentShaderSource = `
     void main() {
         vec2 pixel = gl_FragCoord.xy - 0.5 * u_resolution;
         float escapeIteration;
-        #ifdef FRACTAL_BASIC
+        #ifdef FRACTAL_JULIA
+        escapeIteration = juliaDirect(pixel * u_pixelScale.x);
+        #elif defined(FRACTAL_BASIC)
         escapeIteration = mandelbrotDirect(pixel * u_pixelScale.x + u_centerHi + u_centerLo);
         #else
         if (u_usePerturbation > 0.5 || u_useDoubleDouble > 0.5) {

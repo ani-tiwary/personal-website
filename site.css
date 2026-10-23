@@ -105,6 +105,34 @@ button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px s
 
 #fractalCanvas:active { cursor: grabbing; }
 
+.julia-preview {
+    position: fixed;
+    left: max(1.25rem, env(safe-area-inset-left, 0px));
+    bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    z-index: 7;
+    width: min(17rem, 42vw, 42vh);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: .85rem;
+    background: var(--surface);
+    box-shadow: 0 .5rem 2rem rgba(0, 0, 0, .25);
+    pointer-events: none;
+}
+.julia-preview[hidden] { display: none; }
+#juliaCanvas { display: block; width: 100%; aspect-ratio: 1; filter: var(--fractal-filter); }
+.julia-caption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem; padding: .55rem .7rem; font-size: .6rem; }
+#juliaParameter { opacity: .65; font-variant-numeric: tabular-nums; }
+.setting-switch { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .75rem; cursor: pointer; }
+.setting-switch-label { display: inline-flex; align-items: center; gap: .45rem; }
+.setting-switch-label kbd { font: inherit; font-size: .6rem; line-height: 1; opacity: .65; }
+.setting-switch input { appearance: none; flex: 0 0 auto; width: 2rem; height: 1.15rem; margin: 0; padding: 2px; border: 1px solid var(--line); border-radius: 1rem; background: var(--base); cursor: pointer; }
+.setting-switch input::before { content: ''; display: block; width: .75rem; height: .75rem; border-radius: 50%; background: var(--ink); transition: transform .15s; }
+.setting-switch input:checked { background: var(--accent); }
+.setting-switch input:checked::before { transform: translateX(.85rem); background: var(--base); }
+.setting-switch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.setting-switch input:disabled { opacity: .4; cursor: default; }
+.setting-hint { margin: .5rem 0 0; font-size: .65rem; line-height: 1.5; opacity: .65; }
+
 body.is-static { background: var(--base); }
 .is-static #fractalCanvas,
 .is-static .camera-readout { display: none; }

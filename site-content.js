@@ -70,7 +70,10 @@ globalThis.siteContent = {
         scrollSensitivity: "Scroll sensitivity",
         minimum: "Min",
         maximum: "Max",
-        sensitivityValue: "{value}×"
+        sensitivityValue: "{value}×",
+        juliaPreview: "Julia set at pointer",
+        juliaHint: "Preview the Julia set beneath your pointer.",
+        juliaTitle: "Julia set"
     },
 
     // THEME — names, descriptions, and accessible menu messages

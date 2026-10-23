@@ -32,6 +32,7 @@
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsMenu = document.getElementById('settingsMenu');
     const scrollSensitivity = document.getElementById('scrollSensitivity');
+    const juliaPreviewToggle = document.getElementById('juliaPreviewToggle');
     const sensitivityFormatter = new Intl.NumberFormat(copy.meta.locale, { maximumFractionDigits: 2 });
     const socialIconPaths = {
         instagram: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.4" cy="6.6" r="1" class="social-icon-dot"/>',
@@ -560,11 +561,14 @@
         const target = event.target;
         const isTypingField = target instanceof HTMLElement
             && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
-        // Palette radios retain arrow-key behaviour but allow the theme shortcuts.
-        const isTextEntry = isTypingField && !(target instanceof HTMLInputElement && /^(radio|checkbox)$/.test(target.type));
+        // Non-text controls retain native keys while allowing letter shortcuts.
+        const isTextEntry = isTypingField && !(target instanceof HTMLInputElement && /^(radio|checkbox|range)$/.test(target.type));
         if (!isTextEntry && !event.isComposing && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
             const key = event.key.toLowerCase();
             if (key === 'i') toggleInversion();
+            if (key === 'j' && !juliaPreviewToggle.disabled) {
+                window.sitePreferences.set('juliaPreview', window.sitePreferences.getState().juliaPreview === 'on' ? 'off' : 'on');
+            }
             typedSequence = `${typedSequence}${key}`.slice(-3);
             if (typedSequence === 'lol') {
                 typedSequence = '';
@@ -603,6 +607,8 @@
         motionPreference.value = state.motion;
         qualityPreference.value = state.quality;
         qualityPreference.disabled = !window.fractalRenderer;
+        juliaPreviewToggle.checked = state.juliaPreview === 'on';
+        juliaPreviewToggle.disabled = !window.fractalRenderer || window.juliaPreviewRenderer?.unavailable;
         scrollSensitivity.value = state.scrollSensitivity;
         const sensitivityLabel = text(copy.settings.sensitivityValue, { value: sensitivityFormatter.format(state.scrollSensitivity) });
         document.getElementById('sensitivityValue').textContent = sensitivityLabel;
@@ -617,6 +623,7 @@
     motionPreference.addEventListener('change', () => window.sitePreferences.set('motion', motionPreference.value));
     qualityPreference.addEventListener('change', () => window.sitePreferences.set('quality', qualityPreference.value));
     scrollSensitivity.addEventListener('input', () => window.sitePreferences.set('scrollSensitivity', scrollSensitivity.value));
+    juliaPreviewToggle.addEventListener('change', () => window.sitePreferences.set('juliaPreview', juliaPreviewToggle.checked ? 'on' : 'off'));
     window.addEventListener('site:preferences', updatePreferences);
     document.addEventListener('click', event => {
         const settings = document.getElementById('displaySettings');

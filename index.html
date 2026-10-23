@@ -17,7 +17,7 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="site.css?v=58218604ed4f">
+    <link rel="stylesheet" href="site.css?v=a3cc82552d0b">
 </head>
 <body>
     <a class="skip-link" href="#sceneContent">Skip to content</a>
@@ -25,6 +25,10 @@
         <span class="enter-prompt">click to enter <span aria-hidden="true">·</span> drag to explore</span>
     </div>
     <canvas id="fractalCanvas" aria-hidden="true"></canvas>
+    <aside id="juliaPreview" class="julia-preview" aria-label="Julia set at pointer" hidden>
+        <canvas id="juliaCanvas" aria-hidden="true"></canvas>
+        <div class="julia-caption"><span>Julia set</span><span id="juliaParameter"></span></div>
+    </aside>
     <div class="texture" aria-hidden="true"></div>
     <header class="site-header">
         <a class="wordmark" href="#home" data-scene-link="home" aria-label="Ani, home">ani<span>.</span></a>
@@ -98,6 +102,11 @@
                     </div>
                     <input id="scrollSensitivity" class="sensitivity-slider" type="range" min="0.25" max="3" step="0.05" value="1">
                     <div class="sensitivity-limits" aria-hidden="true"><span>Min</span><span>Max</span></div>
+                    <label class="setting-switch" for="juliaPreviewToggle">
+                        <span class="setting-switch-label">Julia set at pointer <kbd aria-hidden="true">J</kbd></span>
+                        <input id="juliaPreviewToggle" type="checkbox" role="switch" aria-describedby="juliaHint" aria-keyshortcuts="j">
+                    </label>
+                    <p id="juliaHint" class="setting-hint">Preview the Julia set beneath your pointer.</p>
                 </section>
             </div>
         </div>
@@ -114,13 +123,14 @@
     </aside>
     <div id="authorCrosshair" class="author-crosshair" hidden aria-hidden="true"></div>
     <noscript>This portfolio uses JavaScript to render and navigate an interactive fractal.</noscript>
-    <script src="site-content.js?v=78f249eb73a2"></script>
+    <script src="site-content.js?v=f39d1e763b6a"></script>
     <script src="scene-data.js?v=35afc0e45b86"></script>
     <script src="fractal-math.js?v=d8f6b8ff1e74"></script>
     <script src="camera-travel.js?v=a4265bed7de9"></script>
-    <script src="fractal-shader.js?v=ce879a3a4365"></script>
-    <script src="site-preferences.js?v=4522bdd7fed5"></script>
+    <script src="fractal-shader.js?v=091947b09f4b"></script>
+    <script src="site-preferences.js?v=0ec69d88ede4"></script>
     <script src="script.js?v=1889a950b166"></script>
-    <script src="site-controller.js?v=e0e638552182"></script>
+    <script src="julia-preview.js?v=09b258e3fe8d"></script>
+    <script src="site-controller.js?v=d419e2287072"></script>
 </body>
 </html>

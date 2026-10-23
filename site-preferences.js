@@ -2,8 +2,8 @@
 (() => {
     const params = new URLSearchParams(location.search);
     const systemMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    const choices = { motion: ['auto', 'on', 'off'], quality: ['auto', 'low', 'high', 'native'] };
-    const defaults = { motion: 'on', quality: 'auto', scrollSensitivity: 1 };
+    const choices = { motion: ['auto', 'on', 'off'], quality: ['auto', 'low', 'high', 'native'], juliaPreview: ['off', 'on'] };
+    const defaults = { motion: 'on', quality: 'auto', scrollSensitivity: 1, juliaPreview: 'off' };
     const values = {};
     for (const key of Object.keys(choices)) {
         let saved;
