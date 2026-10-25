@@ -69,17 +69,17 @@
         node.append(form);
     }
     function media(body, links) {
-        const videoSection = section(body, 'media-video', 'Project video · a journey into the fractal', 'This silent demo shows the portfolio renderer moving from the whole Mandelbrot set toward its intricate boundary. It demonstrates how repeated application of a simple rule produces visual detail. Playback is optional; use the controls to pause or replay.');
+        const videoSection = section(body, 'media-video', 'Project video · how a simple rule becomes a fractal', 'This 28-second guided demo compares three views of the Mandelbrot boundary, from an overview to 1,200× magnification. Each chapter uses a short zoom and a pause to connect the calculation, the colors, and the spiral detail. Cuts between chapters skip the less informative scales. Use the controls to pause, seek, or replay; there is no audio.');
         const video = el('video');
         video.controls = true; video.preload = 'metadata'; video.playsInline = true;
-        video.poster = '/terrible-version/media/fractal-1.png';
-        video.src = '/terrible-version/media/fractal-demo.webm';
-        video.setAttribute('aria-label', 'Silent Mandelbrot zoom demonstration');
+        video.poster = '/terrible-version/media/fractal-tour-poster.png';
+        video.src = '/terrible-version/media/fractal-demo.webm?v=boundary-tour-2';
+        video.setAttribute('aria-label', 'Guided Mandelbrot boundary tour with on-screen explanations');
         video.append(el('p', '', 'Your browser cannot play this video. The visual description below covers its content.'));
         videoSection.append(video);
         const description = el('details');
         description.append(el('summary', '', 'Video description'));
-        description.append(el('p', '', 'The clip starts with the dark, rounded body of the Mandelbrot set surrounded by colored bands. The view moves toward the upper-left boundary. As magnification increases, the bands separate into smaller curves and branching details. The final frame shows the contrast between the dark set and the colorful escape-time bands. There is no speech or soundtrack.'));
+        description.append(el('p', '', 'Chapter 1 shows the whole set and explains the rule: start at z = 0 and repeatedly calculate z² + c. Dark points stay bounded within the iteration limit. Chapter 2 follows the boundary, where colors show how quickly nearby points escape and broad curves resolve into smaller branches. Chapter 3 reaches 1,200× magnification and holds on intricate spiral structures produced by the same rule. The closing text connects the WebGL graphics to this portfolio’s readable HTML content. A magnification counter tracks the journey. There is no speech or soundtrack.'));
         videoSection.append(description, links([{ label: 'Project details and source', scene: 'work', section: 'portfolio' }]));
 
         const audioSection = section(body, 'media-audio', 'Audio experiment · hearing iteration counts', 'This short sonification maps escape-time calculations to pitch. Each note samples a different point across a horizontal slice of the Mandelbrot plane. Points that take more iterations to escape produce higher notes; points that do not escape within the calculation limit are silent. The sound is a data interpretation, not a recording of a physical phenomenon.');

@@ -22,4 +22,6 @@ Facts and metrics come from the existing website and résumé, with Parker Lab d
 
 `node terrible-version/check.mjs` after a build checks desktop and phone layouts, all five pages, direct links and reloads, a WebGL-unavailable fallback, video/audio playback, gallery and feedback controls, preference isolation, PDF links, and the original homepage. It uses the repository's existing headless-Chrome harness. Screenshots go to ignored `artifacts/course-check/`.
 
+`node terrible-version/render-video.mjs` regenerates the 28-second annotated video from settled renderer frames. The camera stays centered on a boundary point throughout the zoom, and chapter holds provide time to read the explanations. The generator decodes the finished video and checks every second for visible color detail; its review contact sheet and measurements go to `artifacts/course-video/`.
+
 To remove this edition later, delete this folder and remove its two-line build integration, then rebuild and deploy. No main-page changes need reverting.
