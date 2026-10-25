@@ -26,5 +26,7 @@ for (const file of ['index.html', 'site.css', 'site-content.js', 'scene-data.js'
     await cp(resolve(root, file), resolve(output, file), { recursive: true });
 }
 await cp(resolve(root, 'Manrope/Manrope-VariableFont_wght.ttf'), resolve(output, 'Manrope/Manrope-VariableFont_wght.ttf'));
+// Package the isolated course edition without changing the main site's output.
+await (await import('../terrible-version/build.mjs')).buildCourseVersion(output);
 console.log('Static site ready in dist/.');
 
