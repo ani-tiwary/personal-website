@@ -5,7 +5,8 @@ import { resolve, extname, sep } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript',
     '.css': 'text/css', '.pdf': 'application/pdf', '.png': 'image/png',
-    '.jpg': 'image/jpeg', '.ttf': 'font/ttf', '.svg': 'image/svg+xml' };
+    '.jpg': 'image/jpeg', '.ttf': 'font/ttf', '.svg': 'image/svg+xml',
+    '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml' };
 createServer(async (request, response) => {
     try {
         const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);

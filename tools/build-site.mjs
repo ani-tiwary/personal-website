@@ -26,6 +26,15 @@ for (const file of ['index.html', 'site.css', 'site-content.js', 'scene-data.js'
     await cp(resolve(root, file), resolve(output, file), { recursive: true });
 }
 await cp(resolve(root, 'Manrope/Manrope-VariableFont_wght.ttf'), resolve(output, 'Manrope/Manrope-VariableFont_wght.ttf'));
+// Hash scenes belong to one canonical document; do not list them as separate pages.
+const canonicalURL = new URL(globalThis.siteContent.meta.url);
+if (canonicalURL.protocol !== 'https:') throw new Error('The canonical URL must use HTTPS.');
+const robots = `User-agent: *\nAllow: /\n\nSitemap: ${new URL('sitemap.xml', canonicalURL)}\n`;
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${canonicalURL.href.replaceAll('&', '&amp;')}</loc></url></urlset>\n`;
+for (const [file, body] of [['robots.txt', robots], ['sitemap.xml', sitemap]]) {
+    await writeFile(resolve(root, file), body);
+    await writeFile(resolve(output, file), body);
+}
 // Package the isolated course edition without changing the main site's output.
 await (await import('../terrible-version/build.mjs')).buildCourseVersion(output);
 console.log('Static site ready in dist/.');

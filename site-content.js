@@ -10,8 +10,15 @@ globalThis.siteContent = {
         "language": "en",
         "locale": "en",
         "name": "Ani",
-        "title": "Ani — software, ML, and data",
-        "description": "Ani's software engineering, machine learning, and data science portfolio.",
+        "title": "Ani Tiwary — software, ML, and data",
+        "description": "Software engineering, machine learning, and data science. Explore Ani Tiwary's work, experience, and resume through an interactive fractal.",
+        "url": "https://www.anitiwary.com/",
+        "fullName": "Ani Tiwary",
+        "socialLocale": "en_US",
+        "previewImage": "https://www.anitiwary.com/media/social-preview-v1.jpg",
+        "previewAlt": "Hello, I'm Ani. Software, machine learning, and data, beside a rainbow Mandelbrot fractal.",
+        "previewLabel": "SOFTWARE / MACHINE LEARNING / DATA",
+        "previewDomain": "anitiwary.com",
         "noScript": "This portfolio uses JavaScript to render and navigate an interactive fractal."
     },
 

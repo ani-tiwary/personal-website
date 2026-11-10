@@ -1,0 +1,24 @@
+<!-- Used by generate-social-assets.mjs; this template is not shipped. -->
+<style>
+    body > :not(#fractalCanvas):not(#socialCard) { display: none !important; }
+    #fractalCanvas { filter: none !important; }
+    #socialCard {
+        position: fixed; inset: 0; z-index: 1000; padding: 62px 68px;
+        color: #f7f6fb; font-family: Manrope, sans-serif;
+        background: linear-gradient(90deg, #101014 0%, #101014ee 30%, #10101480 58%, #10101408 100%);
+        display: flex; flex-direction: column; align-items: flex-start;
+    }
+    #socialCard .identity { font-size: 22px; font-weight: 650; letter-spacing: -.5px; }
+    #socialCard h1 { margin: 98px 0 20px; font-size: 96px; font-weight: 400; line-height: 1.08; letter-spacing: -6px; white-space: nowrap; }
+    #socialCard h1 strong { font-weight: 800; }
+    #socialCard .dot { color: #a5e5d6; }
+    #socialCard .specialties { font-size: 17px; font-weight: 650; letter-spacing: 1.8px; color: #d8d4e2; }
+    #socialCard .domain { margin-top: auto; font-size: 22px; color: #d8d4e2; }
+    #socialCard .line { width: 42px; height: 3px; margin-bottom: 22px; background: linear-gradient(90deg, #ff879e, #ffc875, #7ce2c9, #8ebcff, #cda0f3); }
+</style>
+<div id="socialCard">
+    <div class="identity">{{meta.fullName}}<span class="dot">.</span></div>
+    <h1>hello. i'm <strong>ani</strong><span class="dot">.</span></h1>
+    <div class="specialties">{{meta.previewLabel}}</div>
+    <div class="domain"><div class="line"></div>{{meta.previewDomain}}</div>
+</div>

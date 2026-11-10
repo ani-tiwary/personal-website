@@ -318,7 +318,8 @@
     function updateSceneUI(scene) {
         activeScene = scene;
         document.body.dataset.scene = scene.id;
-        document.title = text(copy.navigation.pageTitle, { scene: scene.label, name: copy.meta.name });
+        document.title = scene.id === 'home' ? copy.meta.title
+            : text(copy.navigation.pageTitle, { scene: scene.label, name: copy.meta.fullName });
         ensureActiveSceneContent(scene);
         const resumeFrame = contentRoot.querySelector(`[data-scene="${scene.id}"] .resume-frame`);
         // Browsers without an inline PDF viewer keep the explicit open/download links.

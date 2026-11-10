@@ -22,6 +22,14 @@ Keep IDs, option keys, and `{templateVariables}` unchanged when editing wording.
 
 The text **inside the embedded resume PDF** is still maintained in Overleaf; it is not website UI copy. `site-content.js` controls its heading, description, accessible title, and download labels. Developer-only diagnostics and technical identifiers stay in the code.
 
+## Link previews and browser icons
+
+`site-content.js` → `meta` controls the canonical URL, search description, and Open Graph / Twitter large-image card metadata. These tags are built into the initial HTML, so link-preview crawlers do not need JavaScript. Home retains the full site title; other sections use their label and Ani's full name in the browser tab. `npm run build` also generates `robots.txt` and a sitemap with the one canonical page (hash sections are not separate URLs).
+
+The checked-in `media/social-preview-v1.jpg` is a 1200×630 card rendered with the site's own fractal and Manrope typography. The browser and Apple touch icons live alongside it. To refresh the artwork, run `npm run build`, `npm run generate:social` (requires Chrome; supports `CHROME_PATH` and `PORT`), then `npm run build` again to copy the new assets into `dist/`. Edit the layout in `tools/social-card.html`. Ordinary deployment builds do not require Chrome. When replacing a published card, give it a new versioned filename in the generator and `meta.previewImage` to avoid reusing the cached image URL.
+
+After deployment, verify the raw page HTML and image URL are publicly accessible. Existing social messages can retain cached previews; validate a newly shared link as well. Local inspection verifies the artwork and metadata, but only the social platform can verify its final embed presentation.
+
 ## Resume updates from Overleaf
 
 The Resume section embeds `media/resume.pdf` and includes open/download links. The PDF retains its original colors in dark mode. Home has no portrait or visible scrollbar; the longer sections remain scrollable.
