@@ -5,6 +5,11 @@
 [build.environment]
   NODE_VERSION = "24"
 
+[[redirects]]
+  from = "/a"
+  to = "/index.html"
+  status = 200
+
 [[headers]]
   for = "/media/resume.pdf"
   [headers.values]

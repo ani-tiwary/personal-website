@@ -2,6 +2,12 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/a", "destination": "/index.html" }
+  ],
+  "redirects": [
+    { "source": "/a/", "destination": "/a", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/media/resume.pdf",

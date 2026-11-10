@@ -9,7 +9,13 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript',
     '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml' };
 createServer(async (request, response) => {
     try {
-        const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+        const url = new URL(request.url, 'http://localhost');
+        let pathname = decodeURIComponent(url.pathname);
+        if (pathname === '/a/') {
+            response.writeHead(308, { Location: `/a${url.search}` });
+            response.end(); return;
+        }
+        if (pathname === '/a') pathname = '/index.html';
         const file = resolve(root, `.${pathname.endsWith('/') ? pathname + 'index.html' : pathname}`);
         if (!file.startsWith(root + sep)) {
             response.writeHead(403); response.end(); return;
