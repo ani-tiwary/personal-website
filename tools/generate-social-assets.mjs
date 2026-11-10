@@ -45,7 +45,7 @@ try {
     });
     if (rendered.exceptionDetails) throw new Error('Social card rendering failed');
     const shot = await command('Page.captureScreenshot', { format: 'jpeg', quality: 92 });
-    await writeFile(new URL('../media/social-preview-v1.jpg', import.meta.url), Buffer.from(shot.data, 'base64'));
+    await writeFile(new URL('../media/social-preview-v2.jpg', import.meta.url), Buffer.from(shot.data, 'base64'));
     for (const [file, size] of [['favicon-32.png', 32], ['icon-192.png', 192], ['apple-touch-icon.png', 180]]) {
         const icon = await command('Runtime.evaluate', {
             expression: `(() => {
