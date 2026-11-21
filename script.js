@@ -87,7 +87,7 @@
         let finalScale, interactiveScale;
         if (quality === 'high' || quality === 'native') {
             finalScale = quality === 'native' ? deviceScale : Math.max(2, deviceScale);
-            interactiveScale = 1;
+            interactiveScale = quality === 'high' ? adaptiveScale : 1;
         } else {
             // A pixel budget prevents Retina and large laptop displays multiplying GPU work.
             const light = quality === 'low';
@@ -100,11 +100,14 @@
         // export resolution, then downsample to antialias fine fractal boundaries.
         const captureScale = Math.min(Math.max(4, deviceScale * 2), Math.sqrt(32000000 / pixels));
         renderScale = Math.min(captures.size ? captureScale : mode === 'interactive' ? interactiveScale : finalScale,
+            Math.sqrt(32000000 / pixels), maxTexture / width, maxTexture / height,
             maxViewport[0] / width, maxViewport[1] / height);
         const w = Math.max(1, Math.round(width * renderScale)), h = Math.max(1, Math.round(height * renderScale));
         // Resizing an unchanged canvas clears it and reallocates GPU storage.
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-        gl.viewport(0, 0, w, h);
+        // Drivers may allocate a smaller drawing buffer than requested.
+        renderScale = gl.drawingBufferHeight / Math.max(1, height);
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     }
     function referenceFits(candidate) {
         if (!candidate) return false;
@@ -160,17 +163,30 @@
     }
     function render() {
         const now = performance.now();
-        if (mode === 'interactive' && quality === 'auto') {
+        if (mode === 'interactive' && (quality === 'auto' || quality === 'high')) {
             const elapsed = now - previousFrame;
             if (previousFrame && elapsed < 2000) {
                 slowFrames = elapsed > 32 ? slowFrames + 1 : 0;
-                fastFrames = elapsed < 20 ? fastFrames + 1 : 0;
-                if (slowFrames >= 3) { adaptiveScale = Math.max(0.4, adaptiveScale * 0.8); slowFrames = 0; }
-                if (fastFrames >= 45) { adaptiveScale = Math.min(1, adaptiveScale + 0.1); fastFrames = 0; }
+                if (slowFrames >= 3) {
+                    adaptiveScale = quality === 'high' ? 0.75 : Math.max(0.4, adaptiveScale * 0.8);
+                    slowFrames = 0;
+                }
+                // Keep High detail at one fallback scale until the gesture settles.
+                if (quality === 'auto') {
+                    fastFrames = elapsed < 20 ? fastFrames + 1 : 0;
+                    if (fastFrames >= 45) { adaptiveScale = Math.min(1, adaptiveScale + 0.1); fastFrames = 0; }
+                }
             }
             previousFrame = now;
-        } else { previousFrame = 0; slowFrames = 0; fastFrames = 0; }
-        if (zoom >= DEEP_ZOOM && !precisePipeline && !deepUnavailable) {
+        } else {
+            previousFrame = 0; slowFrames = 0; fastFrames = 0;
+            if (quality === 'high') adaptiveScale = 1;
+        }
+        // Float32 coordinates can collapse adjacent pixels well before the old
+        // fixed deep-zoom threshold, especially on high-DPI/large screens.
+        const precisionNeeded = zoom >= DEEP_ZOOM || zoom * height * Math.max(4, (devicePixelRatio || 1) * 2)
+            * Math.max(1, Math.abs(math.number(centerX)), Math.abs(math.number(centerY))) > 2 ** 22;
+        if (precisionNeeded && !precisePipeline && !deepUnavailable) {
             try { precisePipeline = createPipeline(window.fractalFragmentShaderSource); }
             catch (error) {
                 deepUnavailable = true;
@@ -178,14 +194,14 @@
             }
         }
         if (deepUnavailable) zoom = Math.min(zoom, DEEP_ZOOM - 1);
-        const deep = zoom >= DEEP_ZOOM;
+        const deep = !deepUnavailable && precisionNeeded;
         const { program, position, uniforms } = deep ? precisePipeline : basicPipeline;
-        const usePerturbation = deep && prepareReference();
+        const usePerturbation = deep && zoom >= DEEP_ZOOM && prepareReference();
         const iterations = captures.size ? MAX_ITERATIONS : Math.min(iterationLimit, MAX_ITERATIONS,
             Math.max(120, Math.floor(120 + Math.log2(Math.max(1, zoom)) * 45 + Math.max(0, Math.log2(zoom / DEEP_ZOOM)) * 20)));
         diagnostics = { mode, scale: renderScale, iterations, quality, adaptiveScale, deepUnavailable, colourPalette,
             precision: usePerturbation ? 'reference-orbit perturbation' : (deep ? 'double-double' : 'direct'),
-            pendingReference: deep && !!worker && !usePerturbation,
+            pendingReference: zoom >= DEEP_ZOOM && !!worker && !usePerturbation,
             precisionFallback: deep && !worker ? (workerError || 'Float textures or workers unavailable') : null,
             referenceMilliseconds: reference?.milliseconds || 0, referenceBuilds: nextJob, skippedIterations: 0,
             pixels: canvas.width * canvas.height };
@@ -198,8 +214,8 @@
         gl.enableVertexAttribArray(position);
         gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
         const x = math.pair(centerX), y = math.pair(centerY);
-        gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
-        gl.uniform2fv(uniforms.pixelScale, math.pair(math.fromNumber(3 / (canvas.height * zoom))));
+        gl.uniform2f(uniforms.resolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        gl.uniform2fv(uniforms.pixelScale, math.pair(math.fromNumber(3 / (gl.drawingBufferHeight * zoom))));
         gl.uniform1f(uniforms.renderScale, renderScale);
         gl.uniform1f(uniforms.colourPalette, colourPalette);
         gl.uniform1f(uniforms.capture, captures.size ? 1 : 0);
@@ -425,6 +441,7 @@
         if (quality !== detail.quality) {
             quality = detail.quality;
             adaptiveScale = 1;
+            previousFrame = 0; slowFrames = 0; fastFrames = 0;
             queueRender();
         }
         if (detail.reduceMotion && animation) {

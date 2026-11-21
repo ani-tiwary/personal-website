@@ -206,9 +206,9 @@ window.fractalFragmentShaderSource = `
             iteration = u_seriesIteration;
             referenceIndex = iteration;
         }
+        vec4 reference = referenceOrbitAt(referenceIndex);
         for (int step = 0; step < LOOP_LIMIT; step++) {
             if (iteration >= u_maxIterations) break;
-            vec4 reference = referenceOrbitAt(referenceIndex);
             vec4 linear = complexMultiplyDD(reference,dz);
             vec2 rr = ddMultiply(dz.xy,dz.xy);
             vec2 ii = ddMultiply(dz.zw,dz.zw);
@@ -216,7 +216,9 @@ window.fractalFragmentShaderSource = `
             dz = complexAddDD(complexAddDD(complexAddDD(linear,linear),
                  vec4(ddAdd(rr,-ii),ddAdd(ri,ri))),dc);
             referenceIndex++;
-            vec4 z = complexAddDD(referenceOrbitAt(referenceIndex),dz);
+            // Carry this sample into the next step to avoid fetching it twice.
+            reference = referenceOrbitAt(referenceIndex);
+            vec4 z = complexAddDD(reference,dz);
             float magnitudeSquared = z.x*z.x + z.z*z.z;
             if (magnitudeSquared > 4.0) {
                 escapedAt = iteration;
@@ -227,6 +229,7 @@ window.fractalFragmentShaderSource = `
             if (magnitudeSquared < dz.x*dz.x + dz.z*dz.z || float(referenceIndex) >= u_referenceOrbitLength - 1.0) {
                 dz = z;
                 referenceIndex = 0;
+                reference = vec4(0.0);
             }
         }
         if (escapedAt >= 0) return finishEscape(escapedAt, escapedZ, c);
@@ -257,21 +260,26 @@ window.fractalFragmentShaderSource = `
         // Derivatives are evaluated for every fragment, before the interior branch.
         float escaped = max(escapeIteration, 0.0);
         vec2 slope = vec2(0.0);
+        vec2 pixelSlope = vec2(0.0);
         #ifdef GL_OES_standard_derivatives
-        slope = vec2(dFdx(escaped), dFdy(escaped)) * u_renderScale;
+        pixelSlope = vec2(dFdx(escaped), dFdy(escaped));
+        slope = pixelSlope * u_renderScale;
         #endif
         float color = 0.0;
         if (escapeIteration >= 0.0) {
             float phase = escaped * 0.16;
-            float bandwidth = length(slope);
+            // Filtering follows actual framebuffer pixels; relief follows CSS
+            // pixels. Mixing these made low-resolution/adaptive frames alias.
+            float bandwidth = max(length(slope), length(pixelSlope));
             float fineVisibility = 1.0 - smoothstep(0.5, 2.5, bandwidth);
-            float wave = 0.5 + 0.5 * cos(phase);
+            float waveVisibility = 1.0 - smoothstep(1.0, 6.2831853, bandwidth * 0.16);
+            float wave = 0.5 + 0.5 * cos(phase) * waveVisibility;
             float tone = 0.30 + 0.58 * smoothstep(0.0, 1.0, wave);
             tone += 0.022 * sin(escaped * 0.8) * fineVisibility;
 
             // A satin surface: broad, soft light and a narrow polished edge.
             // All material work is once per pixel, outside the orbit calculation.
-            vec2 relief = slope * (-sin(phase)) * 0.42;
+            vec2 relief = slope * (-sin(phase)) * 0.42 * waveVisibility;
             relief /= 1.0 + 0.12 * length(relief);
             vec3 normal = normalize(vec3(-relief, 1.0));
             vec3 lightDirection = vec3(-0.408248, 0.408248, 0.816497);
@@ -300,7 +308,7 @@ window.fractalFragmentShaderSource = `
             vec2 uv = gl_FragCoord.xy / u_resolution;
             float t = escaped * 0.035 + uv.x * 0.42 + uv.y * 0.25;
             // Fade unresolved colour bands to their average instead of aliasing.
-            float chroma = 1.0 - smoothstep(0.25, 1.0, length(slope) * 0.035);
+            float chroma = 1.0 - smoothstep(0.25, 1.0, max(length(slope), length(pixelSlope)) * 0.035);
             vec3 spectrum = 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.666667, 0.333333)));
             vec3 pigment = mix(vec3(0.5), spectrum, chroma);
             vec3 base = vec3(0.035, 0.040, 0.075);
