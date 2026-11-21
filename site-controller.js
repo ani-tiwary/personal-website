@@ -207,7 +207,7 @@
             body.append(grid);
         }
         if (scene.content.resume) {
-            const { src, title } = scene.content.resume;
+            const { src, title, preview } = scene.content.resume;
             const actions = makeElement('div', 'scene-links resume-actions');
             const open = makeElement('a', 'scene-link', copy.shared.openResume);
             open.href = src;
@@ -217,12 +217,13 @@
             download.href = src;
             download.download = copy.shared.resumeFilename;
             actions.append(open, download);
-            const frame = makeElement('iframe', 'resume-frame');
-            // Defer the PDF until this section is selected, never at home startup.
-            frame.dataset.src = `${src}#view=FitH&toolbar=0`;
-            frame.hidden = true;
-            frame.title = title;
-            body.append(actions, frame);
+            const image = makeElement('img', 'resume-preview');
+            image.dataset.src = preview;
+            image.alt = title;
+            image.decoding = 'async';
+            image.draggable = false;
+            image.hidden = true;
+            body.append(actions, image);
         }
 
         if (scene.content.placeholders?.length) {
@@ -321,11 +322,10 @@
         document.title = scene.id === 'home' ? copy.meta.title
             : text(copy.navigation.pageTitle, { scene: scene.label, name: copy.meta.fullName });
         ensureActiveSceneContent(scene);
-        const resumeFrame = contentRoot.querySelector(`[data-scene="${scene.id}"] .resume-frame`);
-        // Browsers without an inline PDF viewer keep the explicit open/download links.
-        if (resumeFrame && !resumeFrame.hasAttribute('src') && navigator.pdfViewerEnabled !== false) {
-            resumeFrame.src = resumeFrame.dataset.src;
-            resumeFrame.hidden = false;
+        const resumePreview = contentRoot.querySelector(`[data-scene="${scene.id}"] .resume-preview`);
+        if (resumePreview && !resumePreview.hasAttribute('src')) {
+            resumePreview.src = resumePreview.dataset.src;
+            resumePreview.hidden = false;
         }
         positionContent(renderer.getState());
         navRoot.querySelectorAll('[data-scene-link]').forEach(button => {

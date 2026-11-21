@@ -34,7 +34,7 @@ After deployment, verify the raw page HTML and image URL are publicly accessible
 
 ## Resume updates from Overleaf
 
-The Resume section embeds `media/resume.pdf` and includes open/download links. The PDF retains its original colors in dark mode. Home has no portrait or visible scrollbar; the longer sections remain scrollable.
+The Resume section shows an image of the first page alongside links to open or download the full `media/resume.pdf`. The preview retains its original colors in dark mode. Home has no portrait or visible scrollbar; the longer sections remain scrollable.
 
 `tools/sync-resume.mjs` opens your Overleaf **view-only sharing link** in a temporary Chrome session and downloads the latest compiled PDF. It requires Node 22+ and Chrome (`CHROME_PATH` can override the executable). It validates the PDF before replacing the existing file, retains the previous copy on failure, and skips identical downloads. The sharing link stays in the `OVERLEAF_URL` environment variable or GitHub secret, never the public site.
 
@@ -43,11 +43,11 @@ For a local refresh, enter the sharing link at the hidden prompt:
 ```bash
 read -rsp 'Overleaf view-only link: ' OVERLEAF_URL
 export OVERLEAF_URL
-npm run sync-resume
+npm run sync-resume && pdftoppm -f 1 -l 1 -scale-to-x 1440 -scale-to-y -1 -png -singlefile media/resume.pdf media/resume-preview
 unset OVERLEAF_URL
 ```
 
-The workflow `.github/workflows/sync-resume.yml` checks at 05:23 and 17:23 UTC daily and can also run from **Actions → Sync resume from Overleaf → Run workflow**. It commits only `media/resume.pdf` when the file changes. Edit and recompile normally in Overleaf; updates appear after the next successful run and deployment, not instantly. Local checkouts receive those remote updates on `git pull`.
+The workflow `.github/workflows/sync-resume.yml` checks at 05:23 and 17:23 UTC daily and can also run from **Actions → Sync resume from Overleaf → Run workflow**. When the PDF changes, it regenerates and commits the PDF and its preview together. Edit and recompile normally in Overleaf; updates appear after the next successful run and deployment, not instantly. Local checkouts receive those remote updates on `git pull`.
 
 To activate it:
 

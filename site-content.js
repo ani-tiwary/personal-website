@@ -236,6 +236,7 @@ globalThis.siteContent = {
             "body": "My education, experience, and technical skills, all in one place.",
             "resume": {
                 "src": "media/resume.pdf",
+                "preview": "media/resume-preview.png",
                 "title": "Ani Tiwary’s resume"
             },
             "links": [

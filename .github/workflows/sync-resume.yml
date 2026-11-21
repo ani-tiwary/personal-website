@@ -50,10 +50,20 @@ jobs:
         env:
           OVERLEAF_URL: ${{ secrets.OVERLEAF_URL }}
         run: node tools/sync-resume.mjs
-      - name: Commit an updated PDF
+      - name: Render the updated résumé preview
+        run: |
+          if git diff --quiet -- media/resume.pdf && test -f media/resume-preview.png; then
+            exit 0
+          fi
+          if ! command -v pdftoppm >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y poppler-utils
+          fi
+          pdftoppm -f 1 -l 1 -scale-to-x 1440 -scale-to-y -1 -png -singlefile media/resume.pdf media/resume-preview
+      - name: Commit an updated résumé
         id: commit
         run: |
-          git add media/resume.pdf
+          git add media/resume.pdf media/resume-preview.png
           if git diff --cached --quiet; then
             echo "Resume unchanged."
             exit 0
